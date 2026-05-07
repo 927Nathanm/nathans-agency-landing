@@ -68,7 +68,26 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       return () => obs.disconnect()
     }, [])
 
-    // Draw crosshair + in-progress stroke
+    const drawHoverCrosshair = (
+      ctx: CanvasRenderingContext2D, x: number, y: number, color: string,
+    ) => {
+      const r = 10
+      ctx.save()
+      ctx.globalAlpha = 0.85
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.shadowBlur = 8
+      ctx.shadowColor = color
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(x - r - 4, y); ctx.lineTo(x + r + 4, y)
+      ctx.moveTo(x, y - r - 4); ctx.lineTo(x, y + r + 4)
+      ctx.stroke()
+      ctx.restore()
+    }
+
     const redrawCanvas = useCallback(() => {
       const canvas = canvasRef.current
       if (!canvas) return
@@ -82,27 +101,34 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       ctx.scale(dpr, dpr)
 
       if (clubPathActive) {
-        // Draw hover crosshair so user can see exactly where they're clicking
         const h = hoverRef.current
-        if (h) {
-          const px = h.x * cssW
-          const py = h.y * cssH
-          const r = 10
+        if (h) drawHoverCrosshair(ctx, h.x * cssW, h.y * cssH, '#ffff00')
+      } else if (drawingState.activeTool === 'angle') {
+        // Render any committed clicks first
+        if (drawingState.currentPoints.length > 0) {
+          drawInProgress(
+            ctx, 'angle', drawingState.currentPoints,
+            { color: drawingState.color, strokeWidth: drawingState.strokeWidth, opacity: 0.9 },
+            cssW, cssH,
+          )
+        }
+        // Hover preview: dashed line from last placed click to cursor
+        const h = hoverRef.current
+        if (h && drawingState.isDrawing && drawingState.currentPoints.length > 0) {
+          const last = drawingState.currentPoints[drawingState.currentPoints.length - 1]
           ctx.save()
-          ctx.globalAlpha = 0.85
-          ctx.strokeStyle = '#ffff00'
-          ctx.lineWidth = 1.5
-          ctx.shadowBlur = 8
-          ctx.shadowColor = '#ffff00'
+          ctx.setLineDash([5, 5])
+          ctx.globalAlpha = 0.55
+          ctx.strokeStyle = drawingState.color
+          ctx.lineWidth = drawingState.strokeWidth
+          ctx.lineCap = 'round'
           ctx.beginPath()
-          ctx.arc(px, py, r, 0, Math.PI * 2)
-          ctx.stroke()
-          ctx.beginPath()
-          ctx.moveTo(px - r - 4, py); ctx.lineTo(px + r + 4, py)
-          ctx.moveTo(px, py - r - 4); ctx.lineTo(px, py + r + 4)
+          ctx.moveTo(last.x * cssW, last.y * cssH)
+          ctx.lineTo(h.x * cssW, h.y * cssH)
           ctx.stroke()
           ctx.restore()
         }
+        if (h) drawHoverCrosshair(ctx, h.x * cssW, h.y * cssH, drawingState.color)
       } else if (drawingState.currentPoints.length > 0) {
         drawInProgress(
           ctx,
@@ -135,19 +161,24 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       [drawingState, currentTime, onAnnotationComplete]
     )
 
+    const findAnnotationAt = useCallback((p: Point): string | null => {
+      let bestId: string | null = null
+      let bestDist = ERASE_THRESHOLD
+      for (const ann of annotations) {
+        for (const pt of ann.points) {
+          const d = Math.hypot(p.x - pt.x, p.y - pt.y)
+          if (d < bestDist) { bestDist = d; bestId = ann.id }
+        }
+      }
+      return bestId
+    }, [annotations])
+
     const eraseAt = useCallback(
       (p: Point) => {
-        let bestId: string | null = null
-        let bestDist = ERASE_THRESHOLD
-        for (const ann of annotations) {
-          for (const pt of ann.points) {
-            const d = Math.hypot(p.x - pt.x, p.y - pt.y)
-            if (d < bestDist) { bestDist = d; bestId = ann.id }
-          }
-        }
-        if (bestId) onEraseAnnotation(bestId)
+        const id = findAnnotationAt(p)
+        if (id) onEraseAnnotation(id)
       },
-      [annotations, onEraseAnnotation]
+      [findAnnotationAt, onEraseAnnotation]
     )
 
     const onPointerDown = useCallback(
@@ -195,17 +226,19 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           redrawCanvas()
           return
         }
+        if (drawingState.activeTool === 'angle') {
+          // Track hover separately — DON'T call onContinueDrawing during move
+          // (that was corrupting the points array between clicks).
+          hoverRef.current = getPoint(e)
+          redrawCanvas()
+          return
+        }
         if (drawingState.activeTool === 'eraser') {
           if (isPointerDown.current) eraseAt(getPoint(e))
           return
         }
-        const p = getPoint(e)
-        if (drawingState.activeTool === 'angle') {
-          if (drawingState.isDrawing) onContinueDrawing(p)
-          return
-        }
         if (isPointerDown.current && drawingState.isDrawing) {
-          onContinueDrawing(p)
+          onContinueDrawing(getPoint(e))
         }
       },
       [clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt, redrawCanvas]
@@ -239,8 +272,11 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
     )
 
     const onPointerLeave = useCallback(() => {
-      if (clubPathActive) { hoverRef.current = null; redrawCanvas() }
-    }, [clubPathActive, redrawCanvas])
+      if (clubPathActive || drawingState.activeTool === 'angle') {
+        hoverRef.current = null
+        redrawCanvas()
+      }
+    }, [clubPathActive, drawingState.activeTool, redrawCanvas])
 
     useEffect(() => {
       const canvas = canvasRef.current
