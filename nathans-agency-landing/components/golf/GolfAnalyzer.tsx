@@ -243,9 +243,13 @@ export function GolfAnalyzer() {
               hasVideo2={!!video2Url}
               traceProgress={clubPath.traceProgress}
               onToggleTracking={clubPath.toggleTracking}
-              onAutoTrace={(slot) => {
+              onMotionTrace={(slot) => {
                 const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
-                if (video) clubPath.autoTrace(video, slot)
+                if (video) clubPath.motionTrace(video, slot)
+              }}
+              onAITrace={(slot) => {
+                const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
+                if (video) clubPath.aiTrace(video, slot)
               }}
               onUpdateColor={clubPath.updateColor}
               onUpdateStrokeWidth={clubPath.updateStrokeWidth}
