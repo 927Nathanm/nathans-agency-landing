@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
 import { VideoPanel, type VideoPanelHandle } from './VideoPanel'
 import { VideoControls } from './VideoControls'
@@ -8,23 +8,30 @@ import { VideoScrubber } from './VideoScrubber'
 import { DrawingToolbar } from './DrawingToolbar'
 import { ClubPathToolbar } from './ClubPathToolbar'
 import { AIChatPanel } from './AIChatPanel'
+import { HelpModal } from './HelpModal'
 import { useVideoSync } from '@/hooks/golf/useVideoSync'
 import { useDrawing } from '@/hooks/golf/useDrawing'
 import { useAnnotations } from '@/hooks/golf/useAnnotations'
 import { useFrameCapture } from '@/hooks/golf/useFrameCapture'
 import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
 import { useClubPath } from '@/hooks/golf/useClubPath'
+import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
-import { Layers, Columns2 } from 'lucide-react'
+import { Layers, Columns2, Camera, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+
+const STORAGE_KEY = 'swingiq-annotations-v1'
 
 export function GolfAnalyzer() {
   const [video1Url, setVideo1Url] = useState<string | null>(null)
   const [video2Url, setVideo2Url] = useState<string | null>(null)
   const [overlayOpacity, setOverlayOpacity] = useState(50)
   const [showOverlay, setShowOverlay] = useState(false)
-  const [mode, setMode] = useState<'dual' | 'single'>('dual')
+  const [mode, setMode] = useState<'dual' | 'single'>('single')
+  const [helpOpen, setHelpOpen] = useState(false)
+  // If only one video loaded, force single regardless of toggle (avoids stretched panels)
+  const effectiveMode: 'dual' | 'single' = video2Url ? mode : 'single'
 
   const urlRef1 = useRef<string | null>(null)
   const urlRef2 = useRef<string | null>(null)
@@ -49,6 +56,64 @@ export function GolfAnalyzer() {
 
   const ai = useAIAnalysis(sync.currentTime)
 
+  // Auto-save annotations to localStorage so work persists across reloads
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const { a1, a2 } = JSON.parse(raw) as { a1: Annotation[]; a2: Annotation[] }
+        if (a1 && a2) annotations.restoreAll(a1, a2)
+      }
+    } catch { /* corrupt or quota */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!restoredRef.current) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          a1: annotations.annotations1,
+          a2: annotations.annotations2,
+        }))
+      } catch { /* ignore */ }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [annotations.annotations1, annotations.annotations2])
+
+  // Download a PNG snapshot of the current frame with all annotations baked in
+  const handleSnapshot = useCallback(() => {
+    const video = sync.videoRef1.current
+    const annCanvas = panel1Ref.current?.annotationCanvasRef.current
+    if (!video) return
+    const dataUrl = captureVideoFrame(video, annCanvas, 0.95)
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `swing-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.jpg`
+    a.click()
+  }, [sync.videoRef1])
+
+  // Global keyboard shortcuts (top-level, not focus-dependent)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        setHelpOpen(o => !o)
+        e.preventDefault()
+      } else if (e.key === 'Escape' && helpOpen) {
+        setHelpOpen(false)
+      } else if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey) {
+        handleSnapshot()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [helpOpen, handleSnapshot])
+
   const handleFileSelected = useCallback((file: File, slot: 1 | 2) => {
     if (!file.name) return
     if (slot === 1) {
@@ -61,7 +126,7 @@ export function GolfAnalyzer() {
       const url = URL.createObjectURL(file)
       urlRef2.current = url
       setVideo2Url(url)
-      if (mode === 'single') setMode('dual')
+      setMode('dual')
     }
   }, [mode])
 
@@ -164,14 +229,38 @@ export function GolfAnalyzer() {
               )}
             </div>
           )}
+          {video2Url && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
+              onClick={() => setMode(m => m === 'dual' ? 'single' : 'dual')}
+            >
+              <Columns2 className="h-3.5 w-3.5" />
+              {effectiveMode === 'dual' ? 'Single view' : 'Dual view'}
+            </Button>
+          )}
+          {video1Url && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
+              onClick={handleSnapshot}
+              title="Download snapshot of current frame (S)"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              Snapshot
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
             className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
-            onClick={() => setMode(m => m === 'dual' ? 'single' : 'dual')}
+            onClick={() => setHelpOpen(true)}
+            title="Keyboard shortcuts (?)"
           >
-            <Columns2 className="h-3.5 w-3.5" />
-            {mode === 'dual' ? 'Single view' : 'Dual view'}
+            <HelpCircle className="h-3.5 w-3.5" />
+            Help
           </Button>
         </div>
       </div>
@@ -181,7 +270,7 @@ export function GolfAnalyzer() {
         <ResizablePanel defaultSize={72} minSize={50}>
           <div className="flex flex-col h-full p-2 gap-2">
             {/* Videos */}
-            <div className={`flex-1 min-h-0 grid gap-2 ${mode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`flex-1 min-h-0 grid gap-2 ${effectiveMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <VideoPanel
                 ref={panel1Ref}
                 slot={1}
@@ -209,7 +298,7 @@ export function GolfAnalyzer() {
                 onMoveAnnotation={handleMoveAnnotation}
                 label="Video 1 — Current Swing"
               />
-              {mode === 'dual' && (
+              {effectiveMode === 'dual' && (
                 <VideoPanel
                   ref={panel2Ref}
                   slot={2}
@@ -324,6 +413,8 @@ export function GolfAnalyzer() {
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

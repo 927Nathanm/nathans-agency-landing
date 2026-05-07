@@ -146,6 +146,12 @@ export function useAnnotations() {
     []
   )
 
+  // Replace both annotation arrays at once — used for session restore
+  const restoreAll = useCallback((a1: Annotation[], a2: Annotation[]) => {
+    setAnnotations1(a1)
+    setAnnotations2(a2)
+  }, [])
+
   return {
     annotations1,
     annotations2,
@@ -158,6 +164,7 @@ export function useAnnotations() {
     selectAnnotation,
     updateAnnotationPoint,
     moveAnnotation,
+    restoreAll,
     undo,
     redo,
     clearSlot,

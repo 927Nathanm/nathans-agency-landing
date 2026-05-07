@@ -111,6 +111,14 @@ export function VideoScrubber({ currentTime, duration, abLoop, onSeek }: Props) 
       <span className="text-xs font-mono text-zinc-500 w-16 shrink-0 text-right">
         {formatTime(duration)}
       </span>
+
+      {/* Tempo readout: when both loop points set, show duration of selection.
+          Pro target for backswing-to-downswing is a 3:1 ratio (~0.7s : 0.23s) */}
+      {abLoop.a !== null && abLoop.b !== null && (
+        <span className="text-xs font-mono text-green-400 shrink-0 ml-1 px-2 py-0.5 rounded bg-green-950/40 border border-green-800/40">
+          {(Math.abs(abLoop.b - abLoop.a)).toFixed(2)}s loop
+        </span>
+      )}
     </div>
   )
 }
