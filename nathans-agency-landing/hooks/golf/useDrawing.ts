@@ -14,7 +14,7 @@ export function useDrawing() {
   const [drawingState, setDrawingState] = useState<DrawingState>({
     activeTool: 'select',
     color: '#ff0000',
-    strokeWidth: 2,
+    strokeWidth: 1.5,
     isDrawing: false,
     currentPoints: [],
     targetVideo: 1,

@@ -8,8 +8,10 @@ function applyStyle(ctx: CanvasRenderingContext2D, style: AnnotationStyle) {
   ctx.strokeStyle = style.color
   ctx.lineWidth = style.strokeWidth
   ctx.globalAlpha = style.opacity
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
+  // Sharp technical/CAD line ends rather than the rounded marker/pencil look
+  ctx.lineCap = 'butt'
+  ctx.lineJoin = 'miter'
+  ctx.miterLimit = 4
 }
 
 function drawArrowHead(
@@ -86,6 +88,8 @@ export function drawAnnotation(
     }
     case 'freehand': {
       if (pts.length < 2) break
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
       ctx.beginPath()
       ctx.moveTo(pts[0][0], pts[0][1])
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1])
@@ -145,16 +149,16 @@ export function drawAnnotation(
       const ly = vertex[1] + labelDist * Math.sin(labelA)
 
       ctx.save()
-      ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, sans-serif'
+      ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       const tw = ctx.measureText(label).width
-      const pillH = 19
-      const pillW = tw + 11
+      const pillH = 16
+      const pillW = tw + 9
       const px = lx - pillW / 2
       const py = ly - pillH / 2
-      const rr = 4
-      ctx.globalAlpha = 0.88
+      const rr = 3
+      ctx.globalAlpha = 0.9
       ctx.fillStyle = '#1a1a1a'
       ctx.beginPath()
       ctx.moveTo(px + rr, py)
