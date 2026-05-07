@@ -109,7 +109,7 @@ export function GolfAnalyzer() {
 
   // When club path is tracking, disable drawing tool
   const effectiveDrawingState = clubPath.isTracking
-    ? { ...drawing.drawingState, activeTool: 'eraser' as const }
+    ? { ...drawing.drawingState, activeTool: 'select' as const }
     : drawing.drawingState
 
   return (

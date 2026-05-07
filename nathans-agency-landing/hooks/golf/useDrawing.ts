@@ -12,7 +12,7 @@ export function useDrawing() {
   const currentPointsRef = useRef<Point[]>([])
 
   const [drawingState, setDrawingState] = useState<DrawingState>({
-    activeTool: 'line',
+    activeTool: 'select',
     color: '#ff0000',
     strokeWidth: 2,
     isDrawing: false,

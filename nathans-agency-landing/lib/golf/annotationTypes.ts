@@ -1,4 +1,5 @@
 export type DrawingTool =
+  | 'select'
   | 'line'
   | 'arrow'
   | 'circle'

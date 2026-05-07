@@ -295,8 +295,11 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       }
     }, [onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onKeyDown])
 
+    const passThrough = !clubPathActive && drawingState.activeTool === 'select'
     const cursor = clubPathActive
       ? 'crosshair'
+      : drawingState.activeTool === 'select'
+      ? 'default'
       : drawingState.activeTool === 'eraser'
       ? 'cell'
       : drawingState.activeTool === 'freehand'
@@ -307,7 +310,12 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full touch-none"
-        style={{ zIndex: 2, cursor, touchAction: 'none' }}
+        style={{
+          zIndex: 2,
+          cursor,
+          touchAction: 'none',
+          pointerEvents: passThrough ? 'none' : 'auto',
+        }}
       />
     )
   }
