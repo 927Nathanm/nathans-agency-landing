@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { DrawingTool, Point, DrawingState } from '@/lib/golf/annotationTypes'
 
 const DEFAULT_COLORS = [
@@ -9,6 +9,8 @@ const DEFAULT_COLORS = [
 ]
 
 export function useDrawing() {
+  const currentPointsRef = useRef<Point[]>([])
+
   const [drawingState, setDrawingState] = useState<DrawingState>({
     activeTool: 'line',
     color: '#ff0000',
@@ -40,6 +42,7 @@ export function useDrawing() {
   }, [])
 
   const startDrawing = useCallback((point: Point) => {
+    currentPointsRef.current = [point]
     setDrawingState(s => ({ ...s, isDrawing: true, currentPoints: [point] }))
   }, [])
 
@@ -48,23 +51,24 @@ export function useDrawing() {
       if (!s.isDrawing) return s
       const isFreehand = s.activeTool === 'freehand'
       const isAngleOrProtractor = s.activeTool === 'angle' || s.activeTool === 'protractor'
+      let newPoints: Point[]
       if (isFreehand) {
-        return { ...s, currentPoints: [...s.currentPoints, point] }
+        newPoints = [...s.currentPoints, point]
+      } else if (isAngleOrProtractor && s.currentPoints.length >= 2) {
+        newPoints = [s.currentPoints[0], s.currentPoints[1], point]
+      } else {
+        newPoints = [s.currentPoints[0] ?? point, point]
       }
-      if (isAngleOrProtractor && s.currentPoints.length >= 2) {
-        return { ...s, currentPoints: [s.currentPoints[0], s.currentPoints[1], point] }
-      }
-      return { ...s, currentPoints: [s.currentPoints[0] ?? point, point] }
+      currentPointsRef.current = newPoints
+      return { ...s, currentPoints: newPoints }
     })
   }, [])
 
   const finishDrawing = useCallback((): Point[] | null => {
-    let result: Point[] | null = null
-    setDrawingState(s => {
-      result = s.currentPoints.length > 0 ? s.currentPoints : null
-      return { ...s, isDrawing: false, currentPoints: [] }
-    })
-    return result
+    const points = [...currentPointsRef.current]
+    currentPointsRef.current = []
+    setDrawingState(s => ({ ...s, isDrawing: false, currentPoints: [] }))
+    return points.length > 0 ? points : null
   }, [])
 
   const cancelDrawing = useCallback(() => {
