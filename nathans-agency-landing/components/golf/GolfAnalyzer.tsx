@@ -28,10 +28,8 @@ export function GolfAnalyzer() {
   const [video2Url, setVideo2Url] = useState<string | null>(null)
   const [overlayOpacity, setOverlayOpacity] = useState(50)
   const [showOverlay, setShowOverlay] = useState(false)
-  const [mode, setMode] = useState<'dual' | 'single'>('single')
+  const [mode, setMode] = useState<'dual' | 'single'>('dual')
   const [helpOpen, setHelpOpen] = useState(false)
-  // If only one video loaded, force single regardless of toggle (avoids stretched panels)
-  const effectiveMode: 'dual' | 'single' = video2Url ? mode : 'single'
 
   const urlRef1 = useRef<string | null>(null)
   const urlRef2 = useRef<string | null>(null)
@@ -229,17 +227,15 @@ export function GolfAnalyzer() {
               )}
             </div>
           )}
-          {video2Url && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
-              onClick={() => setMode(m => m === 'dual' ? 'single' : 'dual')}
-            >
-              <Columns2 className="h-3.5 w-3.5" />
-              {effectiveMode === 'dual' ? 'Single view' : 'Dual view'}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
+            onClick={() => setMode(m => m === 'dual' ? 'single' : 'dual')}
+          >
+            <Columns2 className="h-3.5 w-3.5" />
+            {mode === 'dual' ? 'Single view' : 'Dual view'}
+          </Button>
           {video1Url && (
             <Button
               size="sm"
@@ -270,7 +266,7 @@ export function GolfAnalyzer() {
         <ResizablePanel defaultSize={72} minSize={50}>
           <div className="flex flex-col h-full p-2 gap-2">
             {/* Videos */}
-            <div className={`flex-1 min-h-0 grid gap-2 ${effectiveMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`flex-1 min-h-0 grid gap-2 ${mode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <VideoPanel
                 ref={panel1Ref}
                 slot={1}
@@ -298,7 +294,7 @@ export function GolfAnalyzer() {
                 onMoveAnnotation={handleMoveAnnotation}
                 label="Video 1 — Current Swing"
               />
-              {effectiveMode === 'dual' && (
+              {mode === 'dual' && (
                 <VideoPanel
                   ref={panel2Ref}
                   slot={2}

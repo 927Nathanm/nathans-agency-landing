@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
+import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
 import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
@@ -72,10 +72,26 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
     const annotationCanvasRef = useRef<HTMLCanvasElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const [videoAspect, setVideoAspect] = useState<number | null>(null)
 
     useImperativeHandle(ref, () => ({
       annotationCanvasRef,
     }))
+
+    // Detect video's natural aspect ratio so the panel can size itself to fit
+    // the video (no awkward letterbox bars / squished frames in dual-view).
+    useEffect(() => {
+      const video = videoRef.current
+      if (!video) return
+      const handle = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          setVideoAspect(video.videoWidth / video.videoHeight)
+        }
+      }
+      if (video.readyState >= 1) handle()
+      video.addEventListener('loadedmetadata', handle)
+      return () => video.removeEventListener('loadedmetadata', handle)
+    }, [videoRef, objectUrl])
 
     useEffect(() => {
       const container = containerRef.current
@@ -166,10 +182,18 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
           )}
         </div>
 
+        {/* Outer wrapper centers the inner video container which is sized to
+            match the loaded video's aspect ratio — eliminates stretched/squished
+            panels regardless of orientation. */}
+        <div className="flex-1 min-h-0 flex items-center justify-center">
         <div
           ref={containerRef}
-          className="relative flex-1 overflow-hidden rounded-lg bg-black"
-          style={{ minHeight: 0 }}
+          className="relative overflow-hidden rounded-lg bg-black"
+          style={
+            objectUrl && videoAspect
+              ? { aspectRatio: String(videoAspect), height: '100%', maxWidth: '100%' }
+              : { width: '100%', height: '100%' }
+          }
         >
           {!objectUrl ? (
             <VideoUploader
@@ -219,6 +243,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
               )}
             </>
           )}
+        </div>
         </div>
       </div>
     )
