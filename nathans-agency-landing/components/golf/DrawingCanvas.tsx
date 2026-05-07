@@ -40,6 +40,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const isPointerDown = useRef(false)
     const clickCountRef = useRef(0)
+    const hoverRef = useRef<{ x: number; y: number } | null>(null)
 
     useImperativeHandle(ref, () => canvasRef.current!, [])
 
@@ -67,8 +68,8 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       return () => obs.disconnect()
     }, [])
 
-    // Redraw in-progress stroke
-    useEffect(() => {
+    // Draw crosshair + in-progress stroke
+    const redrawCanvas = useCallback(() => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
@@ -79,7 +80,30 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.save()
       ctx.scale(dpr, dpr)
-      if (!clubPathActive && drawingState.currentPoints.length > 0) {
+
+      if (clubPathActive) {
+        // Draw hover crosshair so user can see exactly where they're clicking
+        const h = hoverRef.current
+        if (h) {
+          const px = h.x * cssW
+          const py = h.y * cssH
+          const r = 10
+          ctx.save()
+          ctx.globalAlpha = 0.85
+          ctx.strokeStyle = '#ffff00'
+          ctx.lineWidth = 1.5
+          ctx.shadowBlur = 8
+          ctx.shadowColor = '#ffff00'
+          ctx.beginPath()
+          ctx.arc(px, py, r, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.moveTo(px - r - 4, py); ctx.lineTo(px + r + 4, py)
+          ctx.moveTo(px, py - r - 4); ctx.lineTo(px, py + r + 4)
+          ctx.stroke()
+          ctx.restore()
+        }
+      } else if (drawingState.currentPoints.length > 0) {
         drawInProgress(
           ctx,
           drawingState.activeTool,
@@ -91,6 +115,8 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       }
       ctx.restore()
     }, [drawingState, clubPathActive])
+
+    useEffect(() => { redrawCanvas() }, [redrawCanvas])
 
     const commitAnnotation = useCallback(
       (points: Point[]) => {
@@ -164,7 +190,11 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
 
     const onPointerMove = useCallback(
       (e: PointerEvent) => {
-        if (clubPathActive) return
+        if (clubPathActive) {
+          hoverRef.current = getPoint(e)
+          redrawCanvas()
+          return
+        }
         if (drawingState.activeTool === 'eraser') {
           if (isPointerDown.current) eraseAt(getPoint(e))
           return
@@ -178,7 +208,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           onContinueDrawing(p)
         }
       },
-      [clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt]
+      [clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt, redrawCanvas]
     )
 
     const onPointerUp = useCallback(
@@ -209,20 +239,26 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       [onCancelDrawing]
     )
 
+    const onPointerLeave = useCallback(() => {
+      if (clubPathActive) { hoverRef.current = null; redrawCanvas() }
+    }, [clubPathActive, redrawCanvas])
+
     useEffect(() => {
       const canvas = canvasRef.current
       if (!canvas) return
       canvas.addEventListener('pointerdown', onPointerDown)
       canvas.addEventListener('pointermove', onPointerMove)
       canvas.addEventListener('pointerup', onPointerUp)
+      canvas.addEventListener('pointerleave', onPointerLeave)
       window.addEventListener('keydown', onKeyDown)
       return () => {
         canvas.removeEventListener('pointerdown', onPointerDown)
         canvas.removeEventListener('pointermove', onPointerMove)
         canvas.removeEventListener('pointerup', onPointerUp)
+        canvas.removeEventListener('pointerleave', onPointerLeave)
         window.removeEventListener('keydown', onKeyDown)
       }
-    }, [onPointerDown, onPointerMove, onPointerUp, onKeyDown])
+    }, [onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onKeyDown])
 
     const cursor = clubPathActive
       ? 'crosshair'

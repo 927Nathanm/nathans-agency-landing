@@ -81,10 +81,9 @@ export function GolfAnalyzer() {
 
   const handleClubPathClick = useCallback(
     (p: Point, time: number, slot: 1 | 2) => {
-      const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
-      if (video) clubPath.seedAndTrack(video, time, p.x, p.y, slot)
+      clubPath.addPoint(p, time, slot)
     },
-    [clubPath, sync.videoRef1, sync.videoRef2]
+    [clubPath]
   )
 
   const handleEraseAnnotation = useCallback(
@@ -245,18 +244,14 @@ export function GolfAnalyzer() {
               isTracking={clubPath.isTracking}
               pathColor={clubPath.pathColor}
               strokeWidth={clubPath.strokeWidth}
-              hasPath1={clubPath.path1.points.length > 0}
-              hasPath2={clubPath.path2.points.length > 0}
+              pointCount1={clubPath.path1.points.length}
+              pointCount2={clubPath.path2.points.length}
               path1Visible={clubPath.path1.visible}
               path2Visible={clubPath.path2.visible}
               hasVideo1={!!video1Url}
               hasVideo2={!!video2Url}
-              traceProgress={clubPath.traceProgress}
               onToggleTracking={clubPath.toggleTracking}
-              onAITrace={(slot) => {
-                const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
-                if (video) clubPath.aiTrace(video, slot)
-              }}
+              onSmoothPath={clubPath.smoothPath}
               onUpdateColor={clubPath.updateColor}
               onUpdateStrokeWidth={clubPath.updateStrokeWidth}
               onClearPath={clubPath.clearPath}

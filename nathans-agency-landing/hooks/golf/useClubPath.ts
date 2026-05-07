@@ -363,6 +363,48 @@ export function useClubPath() {
     setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 4000)
   }, [pathColor, strokeWidth])
 
+  // Fit a smooth cubic spline through the manually placed points by interpolating
+  // 60 evenly-spaced positions. Makes a rough click path look like a professional arc.
+  const smoothPath = useCallback((slot: 1 | 2 | 'both') => {
+    const interpolate = (pts: ClubPathPoint[]): ClubPathPoint[] => {
+      if (pts.length < 3) return pts
+      const sorted = [...pts].sort((a, b) => a.time - b.time)
+      const N = Math.max(60, sorted.length * 3)
+      const out: ClubPathPoint[] = []
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1)
+        // Find surrounding segment
+        const fi = t * (sorted.length - 1)
+        const lo = Math.min(Math.floor(fi), sorted.length - 2)
+        const hi = lo + 1
+        const u = fi - lo
+        // Catmull-Rom control points
+        const p0 = sorted[Math.max(0, lo - 1)]
+        const p1 = sorted[lo]
+        const p2 = sorted[hi]
+        const p3 = sorted[Math.min(sorted.length - 1, hi + 1)]
+        // Catmull-Rom formula
+        const x = 0.5 * (
+          (2 * p1.x) +
+          (-p0.x + p2.x) * u +
+          (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * u * u +
+          (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * u * u * u
+        )
+        const y = 0.5 * (
+          (2 * p1.y) +
+          (-p0.y + p2.y) * u +
+          (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * u * u +
+          (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * u * u * u
+        )
+        const time = p1.time + (p2.time - p1.time) * u
+        out.push({ time, x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) })
+      }
+      return out
+    }
+    if (slot === 1 || slot === 'both') setPath1(p => ({ ...p, points: interpolate(p.points) }))
+    if (slot === 2 || slot === 'both') setPath2(p => ({ ...p, points: interpolate(p.points) }))
+  }, [])
+
   const clearPath = useCallback((slot: 1 | 2 | 'both') => {
     if (slot === 1 || slot === 'both') { setPath1(p => ({ ...p, points: [] })); seedRef1.current = null; setHasSeed1(false) }
     if (slot === 2 || slot === 'both') { setPath2(p => ({ ...p, points: [] })); seedRef2.current = null; setHasSeed2(false) }
@@ -386,9 +428,8 @@ export function useClubPath() {
   }, [])
 
   return {
-    isTracking, path1, path2, pathColor, strokeWidth, traceProgress,
-    hasSeed1, hasSeed2,
-    toggleTracking, addPoint, seedAndTrack, aiTrace,
-    clearPath, toggleVisible, updateColor, updateStrokeWidth,
+    isTracking, path1, path2, pathColor, strokeWidth,
+    toggleTracking, addPoint,
+    smoothPath, clearPath, toggleVisible, updateColor, updateStrokeWidth,
   }
 }
