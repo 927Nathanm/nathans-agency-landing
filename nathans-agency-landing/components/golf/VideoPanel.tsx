@@ -31,6 +31,7 @@ interface Props {
   onCancelDrawing: () => void
   onVideoLoaded: (slot: 1 | 2) => void
   onClubPathClick: (p: Point, time: number, slot: 1 | 2) => void
+  onEraseAnnotation: (id: string, slot: 1 | 2) => void
   label: string
 }
 
@@ -55,6 +56,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       onCancelDrawing,
       onVideoLoaded,
       onClubPathClick,
+      onEraseAnnotation,
       label,
     },
     ref
@@ -96,6 +98,13 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
         onClubPathClick(p, currentTime, slot)
       },
       [slot, currentTime, onClubPathClick]
+    )
+
+    const handleEraseAnnotation = useCallback(
+      (id: string) => {
+        onEraseAnnotation(id, slot)
+      },
+      [slot, onEraseAnnotation]
     )
 
     const handleFileChange = useCallback(
@@ -169,7 +178,9 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 <DrawingCanvas
                   drawingState={drawingState}
                   clubPathActive={clubPathActive}
+                  annotations={annotations}
                   onAnnotationComplete={handleAnnotationComplete}
+                  onEraseAnnotation={handleEraseAnnotation}
                   onStartDrawing={onStartDrawing}
                   onContinueDrawing={onContinueDrawing}
                   onFinishDrawing={onFinishDrawing}

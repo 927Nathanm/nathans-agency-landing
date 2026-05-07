@@ -1,6 +1,6 @@
 'use client'
 
-import { Footprints, Eye, EyeOff, Trash2, Info, Sparkles, Loader2, Zap } from 'lucide-react'
+import { Eye, EyeOff, Trash2, Sparkles, Loader2, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
@@ -20,7 +20,6 @@ interface Props {
   hasVideo2: boolean
   traceProgress: TraceProgress
   onToggleTracking: () => void
-  onMotionTrace: (slot: 1 | 2) => void
   onAITrace: (slot: 1 | 2) => void
   onUpdateColor: (c: string) => void
   onUpdateStrokeWidth: (w: number) => void
@@ -32,7 +31,7 @@ export function ClubPathToolbar({
   isTracking, pathColor, strokeWidth,
   hasPath1, hasPath2, path1Visible, path2Visible,
   hasVideo1, hasVideo2, traceProgress,
-  onToggleTracking, onMotionTrace, onAITrace,
+  onToggleTracking, onAITrace,
   onUpdateColor, onUpdateStrokeWidth,
   onClearPath, onToggleVisible,
 }: Props) {
@@ -47,37 +46,23 @@ export function ClubPathToolbar({
 
         <div className="h-5 w-px bg-zinc-700" />
 
-        {/* Motion trace — fast, no AI */}
-        {hasVideo1 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline"
-                className="h-8 gap-1.5 text-xs border-yellow-700/60 text-yellow-300 hover:bg-yellow-900/30"
-                onClick={() => onMotionTrace(1)} disabled={isRunning}>
-                {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                Auto Trace V1
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-zinc-800 text-xs max-w-56">
-              Automatically traces the club path using motion detection (fast, no AI needed)
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {hasVideo2 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline"
-                className="h-8 gap-1.5 text-xs border-yellow-700/60 text-yellow-300 hover:bg-yellow-900/30"
-                onClick={() => onMotionTrace(2)} disabled={isRunning}>
-                {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                Auto Trace V2
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-zinc-800 text-xs max-w-56">
-              Automatically traces the club path using motion detection (fast, no AI needed)
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {/* Seed tracking toggle */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm"
+              variant={isTracking ? 'default' : 'outline'}
+              className={`h-8 gap-1.5 text-xs ${isTracking ? 'bg-orange-600 hover:bg-orange-500 text-white border-transparent' : 'border-orange-700/60 text-orange-300 hover:bg-orange-900/30'}`}
+              onClick={onToggleTracking} disabled={isRunning}>
+              {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              {isTracking ? 'Click club head →' : 'Seed Track'}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="bg-zinc-800 text-xs max-w-64">
+            {isTracking
+              ? 'Click on the club head in either video. Template matching will track it through the full swing automatically.'
+              : 'Activate then click the club head on any frame — the tracker locks onto it and follows it through the entire swing.'}
+          </TooltipContent>
+        </Tooltip>
 
         {/* AI trace — slower but smarter */}
         {hasVideo1 && (
@@ -110,22 +95,6 @@ export function ClubPathToolbar({
             </TooltipContent>
           </Tooltip>
         )}
-
-        {/* Manual tracking toggle */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button size="sm"
-              variant={isTracking ? 'default' : 'ghost'}
-              className={`h-8 gap-1.5 text-xs ${isTracking ? 'bg-orange-600 hover:bg-orange-500 text-white' : 'text-zinc-400 hover:text-white'}`}
-              onClick={onToggleTracking} disabled={isRunning}>
-              <Footprints className="h-3.5 w-3.5" />
-              {isTracking ? 'Click club head…' : 'Manual'}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent className="bg-zinc-800 text-xs max-w-60">
-            Step through frames with ← → then click the club head to manually build the path
-          </TooltipContent>
-        </Tooltip>
 
         {/* Progress */}
         {isRunning && (

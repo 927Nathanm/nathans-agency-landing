@@ -4,10 +4,14 @@ import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 
 import type { DrawingState, Point, Annotation } from '@/lib/golf/annotationTypes'
 import { drawInProgress } from '@/lib/golf/drawingUtils'
 
+const ERASE_THRESHOLD = 0.06 // normalized distance to count as "hit"
+
 interface Props {
   drawingState: DrawingState
   clubPathActive: boolean
+  annotations: Annotation[]
   onAnnotationComplete: (ann: Omit<Annotation, 'id' | 'source'>) => void
+  onEraseAnnotation: (id: string) => void
   onStartDrawing: (p: Point) => void
   onContinueDrawing: (p: Point) => void
   onFinishDrawing: () => Point[] | null
@@ -21,7 +25,9 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
     {
       drawingState,
       clubPathActive,
+      annotations,
       onAnnotationComplete,
+      onEraseAnnotation,
       onStartDrawing,
       onContinueDrawing,
       onFinishDrawing,
@@ -103,6 +109,21 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       [drawingState, currentTime, onAnnotationComplete]
     )
 
+    const eraseAt = useCallback(
+      (p: Point) => {
+        let bestId: string | null = null
+        let bestDist = ERASE_THRESHOLD
+        for (const ann of annotations) {
+          for (const pt of ann.points) {
+            const d = Math.hypot(p.x - pt.x, p.y - pt.y)
+            if (d < bestDist) { bestDist = d; bestId = ann.id }
+          }
+        }
+        if (bestId) onEraseAnnotation(bestId)
+      },
+      [annotations, onEraseAnnotation]
+    )
+
     const onPointerDown = useCallback(
       (e: PointerEvent) => {
         e.preventDefault()
@@ -114,7 +135,12 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           return
         }
 
-        if (drawingState.activeTool === 'select') return
+        if (drawingState.activeTool === 'eraser') {
+          isPointerDown.current = true
+          eraseAt(p)
+          return
+        }
+
         isPointerDown.current = true
 
         if (drawingState.activeTool === 'angle' || drawingState.activeTool === 'protractor') {
@@ -133,12 +159,16 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           onStartDrawing(p)
         }
       },
-      [clubPathActive, drawingState.activeTool, getPoint, onStartDrawing, onContinueDrawing, onFinishDrawing, commitAnnotation, onClubPathClick]
+      [clubPathActive, drawingState.activeTool, getPoint, onStartDrawing, onContinueDrawing, onFinishDrawing, commitAnnotation, onClubPathClick, eraseAt]
     )
 
     const onPointerMove = useCallback(
       (e: PointerEvent) => {
-        if (clubPathActive || drawingState.activeTool === 'select') return
+        if (clubPathActive) return
+        if (drawingState.activeTool === 'eraser') {
+          if (isPointerDown.current) eraseAt(getPoint(e))
+          return
+        }
         const p = getPoint(e)
         if (drawingState.activeTool === 'angle' || drawingState.activeTool === 'protractor') {
           if (drawingState.isDrawing) onContinueDrawing(p)
@@ -148,7 +178,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           onContinueDrawing(p)
         }
       },
-      [clubPathActive, drawingState, getPoint, onContinueDrawing]
+      [clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt]
     )
 
     const onPointerUp = useCallback(
@@ -159,7 +189,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           clubPathActive ||
           drawingState.activeTool === 'angle' ||
           drawingState.activeTool === 'protractor' ||
-          drawingState.activeTool === 'select'
+          drawingState.activeTool === 'eraser'
         ) return
         const p = getPoint(e)
         onContinueDrawing(p)
@@ -196,8 +226,8 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
 
     const cursor = clubPathActive
       ? 'crosshair'
-      : drawingState.activeTool === 'select'
-      ? 'default'
+      : drawingState.activeTool === 'eraser'
+      ? 'cell'
       : drawingState.activeTool === 'freehand'
       ? 'cell'
       : 'crosshair'

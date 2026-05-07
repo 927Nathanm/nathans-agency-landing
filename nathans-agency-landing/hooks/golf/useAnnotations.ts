@@ -97,12 +97,30 @@ export function useAnnotations() {
     [annotations1, annotations2, pushHistory]
   )
 
+  const removeAnnotationFromSlot = useCallback(
+    (id: string, slot: 1 | 2) => {
+      if (slot === 1) {
+        setAnnotations1(prev => {
+          pushHistory(prev, annotations2)
+          return prev.filter(a => a.id !== id)
+        })
+      } else {
+        setAnnotations2(prev => {
+          pushHistory(annotations1, prev)
+          return prev.filter(a => a.id !== id)
+        })
+      }
+    },
+    [annotations1, annotations2, pushHistory]
+  )
+
   return {
     annotations1,
     annotations2,
     addAnnotation,
     addAnnotationToSlot,
     addAIAnnotations,
+    removeAnnotationFromSlot,
     undo,
     redo,
     clearSlot,

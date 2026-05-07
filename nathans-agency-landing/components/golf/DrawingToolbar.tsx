@@ -1,13 +1,13 @@
 'use client'
 
-import { Minus, ArrowRight, Circle, Square, Pen, Triangle, Ruler, GitBranch, MousePointer, Undo2, Redo2, Trash2 } from 'lucide-react'
+import { Minus, ArrowRight, Circle, Square, Pen, Triangle, Ruler, GitBranch, Eraser, Undo2, Redo2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import type { DrawingTool } from '@/lib/golf/annotationTypes'
 
 const TOOLS: { id: DrawingTool; icon: React.ReactNode; label: string }[] = [
-  { id: 'select', icon: <MousePointer className="h-4 w-4" />, label: 'Select' },
+  { id: 'eraser', icon: <Eraser className="h-4 w-4" />, label: 'Eraser — click an annotation to remove it' },
   { id: 'line', icon: <Minus className="h-4 w-4" />, label: 'Line' },
   { id: 'arrow', icon: <ArrowRight className="h-4 w-4" />, label: 'Arrow' },
   { id: 'plane', icon: <GitBranch className="h-4 w-4" />, label: 'Swing Plane' },

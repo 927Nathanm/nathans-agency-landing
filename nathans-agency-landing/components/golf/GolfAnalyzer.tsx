@@ -81,9 +81,17 @@ export function GolfAnalyzer() {
 
   const handleClubPathClick = useCallback(
     (p: Point, time: number, slot: 1 | 2) => {
-      clubPath.addPoint(p, time, slot)
+      const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
+      if (video) clubPath.seedAndTrack(video, time, p.x, p.y, slot)
     },
-    [clubPath]
+    [clubPath, sync.videoRef1, sync.videoRef2]
+  )
+
+  const handleEraseAnnotation = useCallback(
+    (id: string, slot: 1 | 2) => {
+      annotations.removeAnnotationFromSlot(id, slot)
+    },
+    [annotations]
   )
 
   const handleSendMessage = useCallback(
@@ -102,7 +110,7 @@ export function GolfAnalyzer() {
 
   // When club path is tracking, disable drawing tool
   const effectiveDrawingState = clubPath.isTracking
-    ? { ...drawing.drawingState, activeTool: 'select' as const }
+    ? { ...drawing.drawingState, activeTool: 'eraser' as const }
     : drawing.drawingState
 
   return (
@@ -178,6 +186,7 @@ export function GolfAnalyzer() {
                 onCancelDrawing={drawing.cancelDrawing}
                 onVideoLoaded={sync.onVideoLoaded}
                 onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
+                onEraseAnnotation={handleEraseAnnotation}
                 label="Video 1 — Current Swing"
               />
               {mode === 'dual' && (
@@ -201,6 +210,7 @@ export function GolfAnalyzer() {
                   onCancelDrawing={drawing.cancelDrawing}
                   onVideoLoaded={sync.onVideoLoaded}
                   onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
+                  onEraseAnnotation={handleEraseAnnotation}
                   label="Video 2 — Reference Swing"
                 />
               )}
@@ -243,10 +253,6 @@ export function GolfAnalyzer() {
               hasVideo2={!!video2Url}
               traceProgress={clubPath.traceProgress}
               onToggleTracking={clubPath.toggleTracking}
-              onMotionTrace={(slot) => {
-                const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
-                if (video) clubPath.motionTrace(video, slot)
-              }}
               onAITrace={(slot) => {
                 const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
                 if (video) clubPath.aiTrace(video, slot)

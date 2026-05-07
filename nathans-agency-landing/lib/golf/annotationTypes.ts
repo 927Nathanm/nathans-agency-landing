@@ -7,7 +7,7 @@ export type DrawingTool =
   | 'angle'
   | 'protractor'
   | 'plane'
-  | 'select'
+  | 'eraser'
 
 export interface Point {
   x: number // normalized 0-1
