@@ -15,9 +15,10 @@ import { useAnnotations } from '@/hooks/golf/useAnnotations'
 import { useFrameCapture } from '@/hooks/golf/useFrameCapture'
 import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
 import { useClubPath } from '@/hooks/golf/useClubPath'
+import { usePoseDetection } from '@/hooks/golf/usePoseDetection'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
-import { Layers, Columns2, Camera, HelpCircle } from 'lucide-react'
+import { Layers, Columns2, Camera, HelpCircle, PersonStanding, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 
@@ -41,6 +42,8 @@ export function GolfAnalyzer() {
   const drawing = useDrawing()
   const annotations = useAnnotations()
   const clubPath = useClubPath()
+  const pose1 = usePoseDetection()
+  const pose2 = usePoseDetection()
 
   const annotationCanvas1 = panel1Ref.current?.annotationCanvasRef ?? { current: null }
   const annotationCanvas2 = panel2Ref.current?.annotationCanvasRef ?? { current: null }
@@ -53,6 +56,16 @@ export function GolfAnalyzer() {
   )
 
   const ai = useAIAnalysis(sync.currentTime)
+
+  // Re-run pose detection whenever the visible frame changes on either video.
+  // Detection is throttled internally (one estimate at a time) so this stays
+  // responsive even during scrubbing or playback.
+  useEffect(() => {
+    if (pose1.enabled && pose1.ready) pose1.detect(sync.videoRef1.current)
+  }, [sync.currentTime, pose1, video1Url])
+  useEffect(() => {
+    if (pose2.enabled && pose2.ready) pose2.detect(sync.videoRef2.current)
+  }, [sync.currentTime, pose2, video2Url])
 
   // Auto-save annotations to localStorage so work persists across reloads
   const restoredRef = useRef(false)
@@ -258,6 +271,32 @@ export function GolfAnalyzer() {
           {video1Url && (
             <Button
               size="sm"
+              variant={pose1.enabled ? 'secondary' : 'ghost'}
+              className={`h-8 gap-1.5 text-xs ${pose1.enabled ? 'bg-emerald-700/40 text-emerald-200' : 'text-zinc-400 hover:text-white'}`}
+              onClick={pose1.toggle}
+              disabled={pose1.loading}
+              title="Toggle AI pose-detection skeleton overlay (free, runs in your browser)"
+            >
+              {pose1.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PersonStanding className="h-3.5 w-3.5" />}
+              Pose V1
+            </Button>
+          )}
+          {video2Url && (
+            <Button
+              size="sm"
+              variant={pose2.enabled ? 'secondary' : 'ghost'}
+              className={`h-8 gap-1.5 text-xs ${pose2.enabled ? 'bg-cyan-700/40 text-cyan-200' : 'text-zinc-400 hover:text-white'}`}
+              onClick={pose2.toggle}
+              disabled={pose2.loading}
+              title="Toggle AI pose-detection skeleton overlay on the reference"
+            >
+              {pose2.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PersonStanding className="h-3.5 w-3.5" />}
+              Pose V2
+            </Button>
+          )}
+          {video1Url && (
+            <Button
+              size="sm"
               variant="ghost"
               className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
               onClick={handleSnapshot}
@@ -311,6 +350,7 @@ export function GolfAnalyzer() {
                 onSelectAnnotation={handleSelectAnnotation}
                 onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
                 onMoveAnnotation={handleMoveAnnotation}
+                poseKeypoints={pose1.keypoints}
                 label="Video 1 — Current Swing"
               />
               {mode === 'dual' && (
@@ -339,6 +379,7 @@ export function GolfAnalyzer() {
                   onSelectAnnotation={handleSelectAnnotation}
                   onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
                   onMoveAnnotation={handleMoveAnnotation}
+                  poseKeypoints={pose2.keypoints}
                   label="Video 2 — Reference Swing"
                 />
               )}

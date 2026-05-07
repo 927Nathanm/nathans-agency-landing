@@ -5,8 +5,10 @@ import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
 import { ClubPathOverlay } from './ClubPathOverlay'
+import { PoseOverlay } from './PoseOverlay'
 import type { Annotation, DrawingState, Point } from '@/lib/golf/annotationTypes'
 import type { ClubPathData } from '@/hooks/golf/useClubPath'
+import type { Keypoint } from '@/hooks/golf/usePoseDetection'
 
 export interface VideoPanelHandle {
   annotationCanvasRef: React.RefObject<HTMLCanvasElement | null>
@@ -36,6 +38,7 @@ interface Props {
   onSelectAnnotation: (id: string | null, slot: 1 | 2) => void
   onUpdateAnnotationPoint: (id: string, slot: 1 | 2, pointIdx: number, p: Point) => void
   onMoveAnnotation: (id: string, slot: 1 | 2, dx: number, dy: number) => void
+  poseKeypoints?: Keypoint[]
   label: string
 }
 
@@ -65,6 +68,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       onSelectAnnotation,
       onUpdateAnnotationPoint,
       onMoveAnnotation,
+      poseKeypoints,
       label,
     },
     ref
@@ -210,6 +214,9 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 selectedId={selectedAnnotationId}
               />
               <ClubPathOverlay pathData={clubPathData} />
+              {poseKeypoints && poseKeypoints.length > 0 && (
+                <PoseOverlay keypoints={poseKeypoints} color={slot === 1 ? '#00ff88' : '#00cfff'} />
+              )}
               {(isActiveSlot || clubPathActive) && (
                 <DrawingCanvas
                   drawingState={drawingState}
