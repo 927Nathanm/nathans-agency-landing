@@ -93,6 +93,23 @@ export function GolfAnalyzer() {
     [annotations]
   )
 
+  const handleSelectAnnotation = useCallback(
+    (id: string | null, slot: 1 | 2) => annotations.selectAnnotation(id, slot),
+    [annotations],
+  )
+
+  const handleUpdateAnnotationPoint = useCallback(
+    (id: string, slot: 1 | 2, idx: number, p: Point) =>
+      annotations.updateAnnotationPoint(id, slot, idx, p),
+    [annotations],
+  )
+
+  const handleMoveAnnotation = useCallback(
+    (id: string, slot: 1 | 2, dx: number, dy: number) =>
+      annotations.moveAnnotation(id, slot, dx, dy),
+    [annotations],
+  )
+
   const handleSendMessage = useCallback(
     async (text: string, withFrames: boolean) => {
       const frames = withFrames ? captureFrames(video2Url ? [1, 2] : [1]) : {}
@@ -186,6 +203,10 @@ export function GolfAnalyzer() {
                 onVideoLoaded={sync.onVideoLoaded}
                 onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
                 onEraseAnnotation={handleEraseAnnotation}
+                selectedAnnotationId={annotations.selectedId1}
+                onSelectAnnotation={handleSelectAnnotation}
+                onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
+                onMoveAnnotation={handleMoveAnnotation}
                 label="Video 1 — Current Swing"
               />
               {mode === 'dual' && (
@@ -210,6 +231,10 @@ export function GolfAnalyzer() {
                   onVideoLoaded={sync.onVideoLoaded}
                   onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
                   onEraseAnnotation={handleEraseAnnotation}
+                  selectedAnnotationId={annotations.selectedId2}
+                  onSelectAnnotation={handleSelectAnnotation}
+                  onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
+                  onMoveAnnotation={handleMoveAnnotation}
                   label="Video 2 — Reference Swing"
                 />
               )}

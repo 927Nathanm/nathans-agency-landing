@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import type { Annotation } from '@/lib/golf/annotationTypes'
+import type { Annotation, Point } from '@/lib/golf/annotationTypes'
 
 export function useAnnotations() {
   const [annotations1, setAnnotations1] = useState<Annotation[]>([])
   const [annotations2, setAnnotations2] = useState<Annotation[]>([])
+  const [selectedId1, setSelectedId1] = useState<string | null>(null)
+  const [selectedId2, setSelectedId2] = useState<string | null>(null)
   const [undoStack, setUndoStack] = useState<{ a1: Annotation[]; a2: Annotation[] }[]>([])
   const [redoStack, setRedoStack] = useState<{ a1: Annotation[]; a2: Annotation[] }[]>([])
 
@@ -114,13 +116,48 @@ export function useAnnotations() {
     [annotations1, annotations2, pushHistory]
   )
 
+  const selectAnnotation = useCallback((id: string | null, slot: 1 | 2) => {
+    if (slot === 1) setSelectedId1(id)
+    else setSelectedId2(id)
+  }, [])
+
+  const updateAnnotationPoint = useCallback(
+    (id: string, slot: 1 | 2, pointIdx: number, point: Point) => {
+      const setter = slot === 1 ? setAnnotations1 : setAnnotations2
+      setter(prev => prev.map(a =>
+        a.id === id
+          ? { ...a, points: a.points.map((pt, i) => i === pointIdx ? point : pt) }
+          : a
+      ))
+    },
+    []
+  )
+
+  // Move every point of an annotation by the same delta — used to drag a shape as a whole
+  const moveAnnotation = useCallback(
+    (id: string, slot: 1 | 2, dx: number, dy: number) => {
+      const setter = slot === 1 ? setAnnotations1 : setAnnotations2
+      setter(prev => prev.map(a =>
+        a.id === id
+          ? { ...a, points: a.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) }
+          : a
+      ))
+    },
+    []
+  )
+
   return {
     annotations1,
     annotations2,
+    selectedId1,
+    selectedId2,
     addAnnotation,
     addAnnotationToSlot,
     addAIAnnotations,
     removeAnnotationFromSlot,
+    selectAnnotation,
+    updateAnnotationPoint,
+    moveAnnotation,
     undo,
     redo,
     clearSlot,

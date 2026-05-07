@@ -95,20 +95,6 @@ export function drawAnnotation(
     case 'angle': {
       // Click order: point 1 → vertex (corner where angle is measured) → point 3
       if (pts.length === 0) break
-      const isPreview = ann.id === 'preview'
-
-      // Small dots at clicked points — only during in-progress preview, hidden once committed
-      if (isPreview) {
-        for (const p of pts) {
-          ctx.save()
-          ctx.fillStyle = ann.style.color
-          ctx.globalAlpha = ann.style.opacity
-          ctx.beginPath()
-          ctx.arc(p[0], p[1], 3, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.restore()
-        }
-      }
 
       if (pts.length < 2) break
       const [p1, vertex, p3] = pts
@@ -137,20 +123,20 @@ export function drawAnnotation(
       const diff = ((a2 - a1) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
       const ccw = diff > Math.PI
 
-      // Thin arc — slightly thinner than the arms for an elegant measurement look
+      // Thin arc at the vertex
       ctx.save()
-      ctx.lineWidth = Math.max(1, ann.style.strokeWidth * 0.65)
+      ctx.lineWidth = Math.max(1, ann.style.strokeWidth * 0.7)
       ctx.beginPath()
       ctx.arc(vertex[0], vertex[1], arcR, a1, a2, ccw)
       ctx.stroke()
       ctx.restore()
 
-      // Degree label — clean text with subtle dark outline (no pill)
+      // Degree label inside a small dark pill (matches Swing Profile style)
       const deg = ccw ? 360 - (diff * 180) / Math.PI : (diff * 180) / Math.PI
       const label = ann.label || `${deg.toFixed(0)}°`
 
       const midA = ccw ? a1 - diff / 2 : a1 + diff / 2
-      const labelDist = arcR + 14
+      const labelDist = arcR + 22
       const lx = vertex[0] + labelDist * Math.cos(midA)
       const ly = vertex[1] + labelDist * Math.sin(midA)
 
@@ -158,13 +144,28 @@ export function drawAnnotation(
       ctx.font = '600 14px ui-sans-serif, system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.lineWidth = 3.5
-      ctx.lineJoin = 'round'
-      ctx.miterLimit = 2
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
-      ctx.strokeText(label, lx, ly)
-      ctx.globalAlpha = ann.style.opacity
-      ctx.fillStyle = ann.style.color
+      const tw = ctx.measureText(label).width
+      const pillH = 22
+      const pillW = tw + 14
+      const px = lx - pillW / 2
+      const py = ly - pillH / 2
+      const rr = 5
+      ctx.globalAlpha = 0.82
+      ctx.fillStyle = '#1a1a1a'
+      ctx.beginPath()
+      ctx.moveTo(px + rr, py)
+      ctx.lineTo(px + pillW - rr, py)
+      ctx.quadraticCurveTo(px + pillW, py, px + pillW, py + rr)
+      ctx.lineTo(px + pillW, py + pillH - rr)
+      ctx.quadraticCurveTo(px + pillW, py + pillH, px + pillW - rr, py + pillH)
+      ctx.lineTo(px + rr, py + pillH)
+      ctx.quadraticCurveTo(px, py + pillH, px, py + pillH - rr)
+      ctx.lineTo(px, py + rr)
+      ctx.quadraticCurveTo(px, py, px + rr, py)
+      ctx.closePath()
+      ctx.fill()
+      ctx.globalAlpha = 1
+      ctx.fillStyle = '#ffffff'
       ctx.fillText(label, lx, ly)
       ctx.restore()
       break
@@ -202,4 +203,94 @@ export function drawInProgress(
     source: 'user',
   }
   drawAnnotation(ctx, ann, canvasW, canvasH)
+}
+
+// Hollow-circle handles drawn over the control points of a selected annotation.
+// Same look as Swing Profile — white fill, colored ring, soft shadow.
+export function drawHandles(
+  ctx: CanvasRenderingContext2D,
+  ann: Annotation,
+  canvasW: number,
+  canvasH: number,
+) {
+  const handleR = 8
+  for (const p of ann.points) {
+    const x = p.x * canvasW
+    const y = p.y * canvasH
+    ctx.save()
+    ctx.shadowBlur = 5
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath()
+    ctx.arc(x, y, handleR, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = ann.style.color
+    ctx.lineWidth = 2.5
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
+// Hit-test geometry helpers for selection / drag in the canvas.
+// All inputs in normalized (0..1) coordinates.
+function distToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+export function hitTestHandle(p: Point, ann: Annotation, threshold: number): number | null {
+  let bestIdx: number | null = null
+  let bestD = threshold
+  for (let i = 0; i < ann.points.length; i++) {
+    const pt = ann.points[i]
+    const d = Math.hypot(p.x - pt.x, p.y - pt.y)
+    if (d < bestD) { bestD = d; bestIdx = i }
+  }
+  return bestIdx
+}
+
+export function hitTestAnnotation(p: Point, ann: Annotation, threshold: number): boolean {
+  const pts = ann.points
+  if (pts.length === 0) return false
+
+  switch (ann.tool) {
+    case 'line':
+    case 'arrow':
+    case 'plane':
+      return pts.length >= 2 && distToSegment(p, pts[0], pts[1]) < threshold
+    case 'circle': {
+      if (pts.length < 2) return false
+      const r = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      const d = Math.hypot(p.x - pts[0].x, p.y - pts[0].y)
+      return Math.abs(d - r) < threshold
+    }
+    case 'rect': {
+      if (pts.length < 2) return false
+      const x = Math.min(pts[0].x, pts[1].x)
+      const y = Math.min(pts[0].y, pts[1].y)
+      const w = Math.abs(pts[1].x - pts[0].x)
+      const h = Math.abs(pts[1].y - pts[0].y)
+      const onLeft = Math.abs(p.x - x) < threshold && p.y >= y - threshold && p.y <= y + h + threshold
+      const onRight = Math.abs(p.x - (x + w)) < threshold && p.y >= y - threshold && p.y <= y + h + threshold
+      const onTop = Math.abs(p.y - y) < threshold && p.x >= x - threshold && p.x <= x + w + threshold
+      const onBot = Math.abs(p.y - (y + h)) < threshold && p.x >= x - threshold && p.x <= x + w + threshold
+      return onLeft || onRight || onTop || onBot
+    }
+    case 'freehand':
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (distToSegment(p, pts[i], pts[i + 1]) < threshold) return true
+      }
+      return false
+    case 'angle':
+      if (pts.length < 3) return pts.length >= 2 && distToSegment(p, pts[0], pts[1]) < threshold
+      return distToSegment(p, pts[0], pts[1]) < threshold || distToSegment(p, pts[1], pts[2]) < threshold
+    default:
+      return false
+  }
 }

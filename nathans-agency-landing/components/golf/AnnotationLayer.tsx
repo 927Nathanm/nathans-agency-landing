@@ -2,16 +2,17 @@
 
 import { useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import type { Annotation } from '@/lib/golf/annotationTypes'
-import { drawAnnotation } from '@/lib/golf/drawingUtils'
+import { drawAnnotation, drawHandles } from '@/lib/golf/drawingUtils'
 
 interface Props {
   annotations: Annotation[]
   currentTime?: number
   isPersistent?: boolean
+  selectedId?: string | null
 }
 
 export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
-  ({ annotations, currentTime = 0, isPersistent = true }, ref) => {
+  ({ annotations, currentTime = 0, isPersistent = true, selectedId = null }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
 
     useImperativeHandle(ref, () => canvasRef.current!, [])
@@ -41,15 +42,16 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
       for (const ann of visible) {
         drawAnnotation(ctx, ann, cssW, cssH)
       }
-      ctx.restore()
-    }, [annotations, currentTime, isPersistent])
 
-    // Redraw whenever annotations/time change
+      // Render handles on top of the selected annotation
+      const sel = selectedId ? visible.find(a => a.id === selectedId) : null
+      if (sel) drawHandles(ctx, sel, cssW, cssH)
+
+      ctx.restore()
+    }, [annotations, currentTime, isPersistent, selectedId])
+
     useEffect(() => { drawAll() }, [drawAll])
 
-    // Redraw when the canvas is resized — VideoPanel sets canvas.width/height which
-    // clears it, so we need to re-render. ResizeObserver on the canvas picks up the
-    // style change that VideoPanel makes alongside the pixel-size change.
     useEffect(() => {
       const canvas = canvasRef.current
       if (!canvas) return

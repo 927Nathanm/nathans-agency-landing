@@ -2,16 +2,22 @@
 
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import type { DrawingState, Point, Annotation } from '@/lib/golf/annotationTypes'
-import { drawInProgress } from '@/lib/golf/drawingUtils'
+import { drawInProgress, hitTestAnnotation, hitTestHandle } from '@/lib/golf/drawingUtils'
 
-const ERASE_THRESHOLD = 0.06 // normalized distance to count as "hit"
+const ERASE_THRESHOLD = 0.06   // normalized distance to count as a hit for erase
+const HANDLE_HIT = 0.025       // ~12px on a typical video — handle drag radius
+const SHAPE_HIT = 0.015        // ~7px — selection click radius near a shape
 
 interface Props {
   drawingState: DrawingState
   clubPathActive: boolean
   annotations: Annotation[]
+  selectedAnnotationId: string | null
   onAnnotationComplete: (ann: Omit<Annotation, 'id' | 'source'>) => void
   onEraseAnnotation: (id: string) => void
+  onSelectAnnotation: (id: string | null) => void
+  onUpdateAnnotationPoint: (id: string, pointIdx: number, p: Point) => void
+  onMoveAnnotation: (id: string, dx: number, dy: number) => void
   onStartDrawing: (p: Point) => void
   onContinueDrawing: (p: Point) => void
   onFinishDrawing: () => Point[] | null
@@ -26,8 +32,12 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       drawingState,
       clubPathActive,
       annotations,
+      selectedAnnotationId,
       onAnnotationComplete,
       onEraseAnnotation,
+      onSelectAnnotation,
+      onUpdateAnnotationPoint,
+      onMoveAnnotation,
       onStartDrawing,
       onContinueDrawing,
       onFinishDrawing,
@@ -35,12 +45,18 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       onClubPathClick,
       currentTime,
     },
-    ref
+    ref,
   ) => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const isPointerDown = useRef(false)
     const clickCountRef = useRef(0)
     const hoverRef = useRef<{ x: number; y: number } | null>(null)
+    // Drag state for select tool: either dragging a handle or moving the whole shape
+    const dragRef = useRef<
+      | { kind: 'handle'; id: string; pointIdx: number }
+      | { kind: 'move'; id: string; lastX: number; lastY: number }
+      | null
+    >(null)
 
     useImperativeHandle(ref, () => canvasRef.current!, [])
 
@@ -104,7 +120,6 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
         const h = hoverRef.current
         if (h) drawHoverCrosshair(ctx, h.x * cssW, h.y * cssH, '#ffff00')
       } else if (drawingState.activeTool === 'angle') {
-        // Render any committed clicks first
         if (drawingState.currentPoints.length > 0) {
           drawInProgress(
             ctx, 'angle', drawingState.currentPoints,
@@ -112,7 +127,6 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
             cssW, cssH,
           )
         }
-        // Hover preview: dashed line from last placed click to cursor
         const h = hoverRef.current
         if (h && drawingState.isDrawing && drawingState.currentPoints.length > 0) {
           const last = drawingState.currentPoints[drawingState.currentPoints.length - 1]
@@ -136,7 +150,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           drawingState.currentPoints,
           { color: drawingState.color, strokeWidth: drawingState.strokeWidth, opacity: 0.9 },
           cssW,
-          cssH
+          cssH,
         )
       }
       ctx.restore()
@@ -158,7 +172,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           frameTime: drawingState.isPersistent ? undefined : currentTime,
         })
       },
-      [drawingState, currentTime, onAnnotationComplete]
+      [drawingState, currentTime, onAnnotationComplete],
     )
 
     const findAnnotationAt = useCallback((p: Point): string | null => {
@@ -178,17 +192,50 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
         const id = findAnnotationAt(p)
         if (id) onEraseAnnotation(id)
       },
-      [findAnnotationAt, onEraseAnnotation]
+      [findAnnotationAt, onEraseAnnotation],
     )
+
+    // Top-most annotation hit at point (iterate reverse — last drawn is on top)
+    const findShapeAt = useCallback((p: Point): string | null => {
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        if (hitTestAnnotation(p, annotations[i], SHAPE_HIT)) return annotations[i].id
+      }
+      return null
+    }, [annotations])
 
     const onPointerDown = useCallback(
       (e: PointerEvent) => {
         e.preventDefault()
         const p = getPoint(e)
+        const canvas = canvasRef.current
 
-        // Club path tracking mode — just record the click
+        // Club path tracking takes priority — every click adds a point
         if (clubPathActive) {
           onClubPathClick(p)
+          return
+        }
+
+        // Select tool — handle drag, body drag, or selection change
+        if (drawingState.activeTool === 'select') {
+          if (selectedAnnotationId) {
+            const sel = annotations.find(a => a.id === selectedAnnotationId)
+            if (sel) {
+              const handleIdx = hitTestHandle(p, sel, HANDLE_HIT)
+              if (handleIdx !== null) {
+                dragRef.current = { kind: 'handle', id: sel.id, pointIdx: handleIdx }
+                canvas?.setPointerCapture(e.pointerId)
+                return
+              }
+              if (hitTestAnnotation(p, sel, SHAPE_HIT)) {
+                dragRef.current = { kind: 'move', id: sel.id, lastX: p.x, lastY: p.y }
+                canvas?.setPointerCapture(e.pointerId)
+                return
+              }
+            }
+          }
+          // Click on another shape selects it; click on empty deselects
+          const hit = findShapeAt(p)
+          onSelectAnnotation(hit)
           return
         }
 
@@ -216,7 +263,11 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           onStartDrawing(p)
         }
       },
-      [clubPathActive, drawingState.activeTool, getPoint, onStartDrawing, onContinueDrawing, onFinishDrawing, commitAnnotation, onClubPathClick, eraseAt]
+      [
+        clubPathActive, drawingState.activeTool, getPoint, onStartDrawing, onContinueDrawing,
+        onFinishDrawing, commitAnnotation, onClubPathClick, eraseAt,
+        selectedAnnotationId, annotations, findShapeAt, onSelectAnnotation,
+      ],
     )
 
     const onPointerMove = useCallback(
@@ -226,9 +277,23 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           redrawCanvas()
           return
         }
+
+        // Drag interactions for select tool
+        if (dragRef.current) {
+          const p = getPoint(e)
+          if (dragRef.current.kind === 'handle') {
+            onUpdateAnnotationPoint(dragRef.current.id, dragRef.current.pointIdx, p)
+          } else {
+            const dx = p.x - dragRef.current.lastX
+            const dy = p.y - dragRef.current.lastY
+            onMoveAnnotation(dragRef.current.id, dx, dy)
+            dragRef.current.lastX = p.x
+            dragRef.current.lastY = p.y
+          }
+          return
+        }
+
         if (drawingState.activeTool === 'angle') {
-          // Track hover separately — DON'T call onContinueDrawing during move
-          // (that was corrupting the points array between clicks).
           hoverRef.current = getPoint(e)
           redrawCanvas()
           return
@@ -237,28 +302,42 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           if (isPointerDown.current) eraseAt(getPoint(e))
           return
         }
+        if (drawingState.activeTool === 'select') {
+          // No drag in progress — just update cursor by re-rendering
+          return
+        }
         if (isPointerDown.current && drawingState.isDrawing) {
           onContinueDrawing(getPoint(e))
         }
       },
-      [clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt, redrawCanvas]
+      [
+        clubPathActive, drawingState, getPoint, onContinueDrawing, eraseAt,
+        redrawCanvas, onUpdateAnnotationPoint, onMoveAnnotation,
+      ],
     )
 
     const onPointerUp = useCallback(
       (e: PointerEvent) => {
+        // End any drag-in-progress for select tool
+        if (dragRef.current) {
+          canvasRef.current?.releasePointerCapture(e.pointerId)
+          dragRef.current = null
+          return
+        }
         if (!isPointerDown.current) return
         isPointerDown.current = false
         if (
           clubPathActive ||
           drawingState.activeTool === 'angle' ||
-          drawingState.activeTool === 'eraser'
+          drawingState.activeTool === 'eraser' ||
+          drawingState.activeTool === 'select'
         ) return
         const p = getPoint(e)
         onContinueDrawing(p)
         const pts = onFinishDrawing()
         if (pts && pts.length > 0) commitAnnotation(pts)
       },
-      [clubPathActive, drawingState.activeTool, getPoint, onContinueDrawing, onFinishDrawing, commitAnnotation]
+      [clubPathActive, drawingState.activeTool, getPoint, onContinueDrawing, onFinishDrawing, commitAnnotation],
     )
 
     const onKeyDown = useCallback(
@@ -266,9 +345,17 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
         if (e.key === 'Escape') {
           onCancelDrawing()
           clickCountRef.current = 0
+          if (selectedAnnotationId) onSelectAnnotation(null)
+        } else if (
+          drawingState.activeTool === 'select' &&
+          (e.key === 'Delete' || e.key === 'Backspace') &&
+          selectedAnnotationId
+        ) {
+          onEraseAnnotation(selectedAnnotationId)
+          onSelectAnnotation(null)
         }
       },
-      [onCancelDrawing]
+      [onCancelDrawing, drawingState.activeTool, selectedAnnotationId, onEraseAnnotation, onSelectAnnotation],
     )
 
     const onPointerLeave = useCallback(() => {
@@ -295,11 +382,10 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       }
     }, [onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onKeyDown])
 
-    const passThrough = !clubPathActive && drawingState.activeTool === 'select'
     const cursor = clubPathActive
       ? 'crosshair'
       : drawingState.activeTool === 'select'
-      ? 'default'
+      ? (selectedAnnotationId ? 'move' : 'default')
       : drawingState.activeTool === 'eraser'
       ? 'cell'
       : drawingState.activeTool === 'freehand'
@@ -310,15 +396,10 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full touch-none"
-        style={{
-          zIndex: 2,
-          cursor,
-          touchAction: 'none',
-          pointerEvents: passThrough ? 'none' : 'auto',
-        }}
+        style={{ zIndex: 2, cursor, touchAction: 'none' }}
       />
     )
-  }
+  },
 )
 
 DrawingCanvas.displayName = 'DrawingCanvas'

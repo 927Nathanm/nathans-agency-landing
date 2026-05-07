@@ -32,6 +32,10 @@ interface Props {
   onVideoLoaded: (slot: 1 | 2) => void
   onClubPathClick: (p: Point, time: number, slot: 1 | 2) => void
   onEraseAnnotation: (id: string, slot: 1 | 2) => void
+  selectedAnnotationId: string | null
+  onSelectAnnotation: (id: string | null, slot: 1 | 2) => void
+  onUpdateAnnotationPoint: (id: string, slot: 1 | 2, pointIdx: number, p: Point) => void
+  onMoveAnnotation: (id: string, slot: 1 | 2, dx: number, dy: number) => void
   label: string
 }
 
@@ -57,6 +61,10 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       onVideoLoaded,
       onClubPathClick,
       onEraseAnnotation,
+      selectedAnnotationId,
+      onSelectAnnotation,
+      onUpdateAnnotationPoint,
+      onMoveAnnotation,
       label,
     },
     ref
@@ -105,6 +113,21 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
         onEraseAnnotation(id, slot)
       },
       [slot, onEraseAnnotation]
+    )
+
+    const handleSelectAnnotation = useCallback(
+      (id: string | null) => onSelectAnnotation(id, slot),
+      [slot, onSelectAnnotation],
+    )
+
+    const handleUpdateAnnotationPoint = useCallback(
+      (id: string, idx: number, p: Point) => onUpdateAnnotationPoint(id, slot, idx, p),
+      [slot, onUpdateAnnotationPoint],
+    )
+
+    const handleMoveAnnotation = useCallback(
+      (id: string, dx: number, dy: number) => onMoveAnnotation(id, slot, dx, dy),
+      [slot, onMoveAnnotation],
     )
 
     const handleFileChange = useCallback(
@@ -172,6 +195,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 annotations={annotations}
                 currentTime={currentTime}
                 isPersistent={isPersistent}
+                selectedId={selectedAnnotationId}
               />
               <ClubPathOverlay pathData={clubPathData} />
               {(isActiveSlot || clubPathActive) && (
@@ -179,8 +203,12 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                   drawingState={drawingState}
                   clubPathActive={clubPathActive}
                   annotations={annotations}
+                  selectedAnnotationId={selectedAnnotationId}
                   onAnnotationComplete={handleAnnotationComplete}
                   onEraseAnnotation={handleEraseAnnotation}
+                  onSelectAnnotation={handleSelectAnnotation}
+                  onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
+                  onMoveAnnotation={handleMoveAnnotation}
                   onStartDrawing={onStartDrawing}
                   onContinueDrawing={onContinueDrawing}
                   onFinishDrawing={onFinishDrawing}
