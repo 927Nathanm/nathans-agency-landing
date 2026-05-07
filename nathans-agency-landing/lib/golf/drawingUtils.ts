@@ -92,8 +92,7 @@ export function drawAnnotation(
       ctx.stroke()
       break
     }
-    case 'angle':
-    case 'protractor': {
+    case 'angle': {
       // Click order: arm1End → vertex (corner) → arm2End
       if (pts.length < 2) break
       const [arm1End, vertex, arm2End] = pts
@@ -144,7 +143,7 @@ export function drawAnnotation(
   }
 
   // Label for non-angle tools
-  if (ann.label && ann.tool !== 'angle' && ann.tool !== 'protractor') {
+  if (ann.label && ann.tool !== 'angle') {
     const [px, py] = pts[0]
     ctx.font = 'bold 13px sans-serif'
     ctx.fillStyle = ann.style.color

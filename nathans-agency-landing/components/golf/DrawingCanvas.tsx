@@ -169,7 +169,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
 
         isPointerDown.current = true
 
-        if (drawingState.activeTool === 'angle' || drawingState.activeTool === 'protractor') {
+        if (drawingState.activeTool === 'angle') {
           clickCountRef.current += 1
           if (clickCountRef.current === 1) {
             onStartDrawing(p)
@@ -200,7 +200,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
           return
         }
         const p = getPoint(e)
-        if (drawingState.activeTool === 'angle' || drawingState.activeTool === 'protractor') {
+        if (drawingState.activeTool === 'angle') {
           if (drawingState.isDrawing) onContinueDrawing(p)
           return
         }
@@ -218,7 +218,6 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
         if (
           clubPathActive ||
           drawingState.activeTool === 'angle' ||
-          drawingState.activeTool === 'protractor' ||
           drawingState.activeTool === 'eraser'
         ) return
         const p = getPoint(e)

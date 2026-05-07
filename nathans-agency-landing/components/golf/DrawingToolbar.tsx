@@ -1,6 +1,6 @@
 'use client'
 
-import { Minus, ArrowRight, Circle, Square, Pen, Triangle, Ruler, GitBranch, Eraser, Undo2, Redo2, Trash2 } from 'lucide-react'
+import { Minus, ArrowRight, Circle, Square, Pen, Triangle, GitBranch, Eraser, Undo2, Redo2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
@@ -14,8 +14,7 @@ const TOOLS: { id: DrawingTool; icon: React.ReactNode; label: string }[] = [
   { id: 'circle', icon: <Circle className="h-4 w-4" />, label: 'Circle' },
   { id: 'rect', icon: <Square className="h-4 w-4" />, label: 'Rectangle' },
   { id: 'freehand', icon: <Pen className="h-4 w-4" />, label: 'Freehand' },
-  { id: 'angle', icon: <Triangle className="h-4 w-4" />, label: 'Angle (3 clicks)' },
-  { id: 'protractor', icon: <Ruler className="h-4 w-4" />, label: 'Protractor (3 clicks)' },
+  { id: 'angle', icon: <Triangle className="h-4 w-4" />, label: 'Angle — click point 1, vertex, point 2' },
 ]
 
 const COLORS = [

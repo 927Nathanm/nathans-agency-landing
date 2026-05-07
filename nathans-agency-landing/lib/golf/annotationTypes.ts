@@ -5,7 +5,6 @@ export type DrawingTool =
   | 'rect'
   | 'freehand'
   | 'angle'
-  | 'protractor'
   | 'plane'
   | 'eraser'
 

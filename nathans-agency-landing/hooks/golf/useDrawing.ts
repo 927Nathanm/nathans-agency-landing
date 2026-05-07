@@ -50,11 +50,11 @@ export function useDrawing() {
     setDrawingState(s => {
       if (!s.isDrawing) return s
       const isFreehand = s.activeTool === 'freehand'
-      const isAngleOrProtractor = s.activeTool === 'angle' || s.activeTool === 'protractor'
+      const isAngle = s.activeTool === 'angle'
       let newPoints: Point[]
       if (isFreehand) {
         newPoints = [...s.currentPoints, point]
-      } else if (isAngleOrProtractor && s.currentPoints.length >= 2) {
+      } else if (isAngle && s.currentPoints.length >= 2) {
         newPoints = [s.currentPoints[0], s.currentPoints[1], point]
       } else {
         newPoints = [s.currentPoints[0] ?? point, point]
@@ -76,7 +76,7 @@ export function useDrawing() {
   }, [])
 
   const needsSecondClick = useCallback((tool: DrawingTool, pointCount: number) => {
-    if (tool === 'angle' || tool === 'protractor') return pointCount === 1
+    if (tool === 'angle') return pointCount === 1
     return false
   }, [])
 
@@ -88,7 +88,7 @@ export function useDrawing() {
           action = 'start'
           return { ...s, isDrawing: true, currentPoints: [point] }
         }
-        if ((s.activeTool === 'angle' || s.activeTool === 'protractor') && s.currentPoints.length === 1) {
+        if (s.activeTool === 'angle' && s.currentPoints.length === 1) {
           action = 'continue'
           return { ...s, currentPoints: [...s.currentPoints, point] }
         }
