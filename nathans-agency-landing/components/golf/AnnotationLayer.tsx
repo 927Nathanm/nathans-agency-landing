@@ -52,10 +52,24 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
 
     useEffect(() => { drawAll() }, [drawAll])
 
+    // Own the canvas pixel dimensions here so they're guaranteed to match the
+    // CSS size on first paint. Previously VideoPanel set canvas.width/height
+    // via a ResizeObserver, but on initial mount the canvas ref wasn't attached
+    // yet, so the canvas kept the HTML default 300x150 — which made everything
+    // drawn on it appear scaled up until the next layout change forced a
+    // resize. Doing it here removes that race.
     useEffect(() => {
       const canvas = canvasRef.current
       if (!canvas) return
-      const obs = new ResizeObserver(() => drawAll())
+      const obs = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect
+        const dpr = window.devicePixelRatio || 1
+        canvas.width = width * dpr
+        canvas.height = height * dpr
+        canvas.style.width = `${width}px`
+        canvas.style.height = `${height}px`
+        drawAll()
+      })
       obs.observe(canvas)
       return () => obs.disconnect()
     }, [drawAll])

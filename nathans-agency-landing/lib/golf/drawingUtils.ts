@@ -149,16 +149,16 @@ export function drawAnnotation(
       const ly = vertex[1] + labelDist * Math.sin(labelA)
 
       ctx.save()
-      ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif'
+      ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       const tw = ctx.measureText(label).width
-      const pillH = 16
-      const pillW = tw + 9
+      const pillH = 19
+      const pillW = tw + 11
       const px = lx - pillW / 2
       const py = ly - pillH / 2
-      const rr = 3
-      ctx.globalAlpha = 0.9
+      const rr = 4
+      ctx.globalAlpha = 0.88
       ctx.fillStyle = '#1a1a1a'
       ctx.beginPath()
       ctx.moveTo(px + rr, py)

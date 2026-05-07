@@ -93,22 +93,10 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       return () => video.removeEventListener('loadedmetadata', handle)
     }, [videoRef, objectUrl])
 
-    useEffect(() => {
-      const container = containerRef.current
-      if (!container) return
-      const obs = new ResizeObserver(([entry]) => {
-        const canvas = annotationCanvasRef.current
-        if (!canvas) return
-        const { width, height } = entry.contentRect
-        const dpr = window.devicePixelRatio || 1
-        canvas.width = width * dpr
-        canvas.height = height * dpr
-        canvas.style.width = `${width}px`
-        canvas.style.height = `${height}px`
-      })
-      obs.observe(container)
-      return () => obs.disconnect()
-    }, [])
+    // Note: AnnotationLayer and DrawingCanvas own their own ResizeObservers
+    // and pixel-dimension setup. Don't duplicate it here — the previous
+    // version raced with the canvas ref attachment and left the canvas at
+    // the default 300x150 on first mount.
 
     const handleAnnotationComplete = useCallback(
       (ann: Omit<Annotation, 'id' | 'source'>) => {
