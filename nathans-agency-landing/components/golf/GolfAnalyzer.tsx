@@ -239,8 +239,14 @@ export function GolfAnalyzer() {
               hasPath2={clubPath.path2.points.length > 0}
               path1Visible={clubPath.path1.visible}
               path2Visible={clubPath.path2.visible}
+              hasVideo1={!!video1Url}
               hasVideo2={!!video2Url}
+              traceProgress={clubPath.traceProgress}
               onToggleTracking={clubPath.toggleTracking}
+              onAutoTrace={(slot) => {
+                const video = slot === 1 ? sync.videoRef1.current : sync.videoRef2.current
+                if (video) clubPath.autoTrace(video, slot)
+              }}
               onUpdateColor={clubPath.updateColor}
               onUpdateStrokeWidth={clubPath.updateStrokeWidth}
               onClearPath={clubPath.clearPath}
