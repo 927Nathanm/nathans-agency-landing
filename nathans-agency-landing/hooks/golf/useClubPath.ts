@@ -27,14 +27,13 @@ export interface TraceProgress {
 const EMPTY_PATH: ClubPathData = {
   points: [],
   color: '#ffff00',
-  strokeWidth: 3,
+  strokeWidth: 4,
   visible: true,
 }
 
-// Seek video to exact time and wait for frame to be ready
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('seek timeout')), 4000)
+    const timeout = setTimeout(() => reject(new Error('seek timeout')), 5000)
     const handler = () => {
       clearTimeout(timeout)
       video.removeEventListener('seeked', handler)
@@ -45,253 +44,298 @@ function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   })
 }
 
-// Find the cell with the highest concentrated motion density
-function findMaxMotionCell(
+// ---------------------------------------------------------------------------
+// Core detection: find the club head as the smallest, fastest-moving cluster
+// ---------------------------------------------------------------------------
+function detectClubHead(
   prev: Uint8ClampedArray,
   curr: Uint8ClampedArray,
-  width: number,
-  height: number,
-  cellSize: number
+  W: number,
+  H: number
 ): { x: number; y: number; score: number } | null {
-  const cellsX = Math.floor(width / cellSize)
-  const cellsY = Math.floor(height / cellSize)
+  // Work on 4×4 cell grid for speed
+  const cellSize = 4
+  const cW = Math.floor(W / cellSize)
+  const cH = Math.floor(H / cellSize)
+  const cells = new Float32Array(cW * cH)
 
-  let maxScore = 0
-  let bestCX = 0
-  let bestCY = 0
-
-  for (let cy = 0; cy < cellsY; cy++) {
-    for (let cx = 0; cx < cellsX; cx++) {
-      let score = 0
+  // Compute per-cell maximum channel difference
+  for (let cy = 0; cy < cH; cy++) {
+    for (let cx = 0; cx < cW; cx++) {
+      let maxDiff = 0
       for (let py = cy * cellSize; py < (cy + 1) * cellSize; py++) {
         for (let px = cx * cellSize; px < (cx + 1) * cellSize; px++) {
-          const i = (py * width + px) * 4
-          score +=
-            Math.abs(curr[i] - prev[i]) +
-            Math.abs(curr[i + 1] - prev[i + 1]) +
+          const i = (py * W + px) * 4
+          const d = Math.max(
+            Math.abs(curr[i] - prev[i]),
+            Math.abs(curr[i + 1] - prev[i + 1]),
             Math.abs(curr[i + 2] - prev[i + 2])
+          )
+          if (d > maxDiff) maxDiff = d
         }
       }
-      // Score per pixel — gives higher weight to concentrated motion (club head)
-      // vs distributed motion (body), since club head moves faster in smaller area
-      const density = score / (cellSize * cellSize)
-      if (density > maxScore) {
-        maxScore = density
-        bestCX = cx
-        bestCY = cy
-      }
+      cells[cy * cW + cx] = maxDiff
     }
   }
 
-  if (maxScore < 25) return null // below noise threshold
+  // BFS connected component labeling on cells above threshold
+  const THRESH = 28
+  const visited = new Uint8Array(cW * cH)
+  const queue = new Int32Array(cW * cH)
+  const components: { cx: number; cy: number; size: number; density: number }[] = []
+
+  for (let start = 0; start < cells.length; start++) {
+    if (cells[start] < THRESH || visited[start]) continue
+
+    let head = 0
+    let tail = 0
+    queue[tail++] = start
+    visited[start] = 1
+
+    let totalScore = 0
+    let sumCX = 0
+    let sumCY = 0
+    let count = 0
+
+    while (head < tail) {
+      const ci = queue[head++]
+      const cx = ci % cW
+      const cy = Math.floor(ci / cW)
+      totalScore += cells[ci]
+      sumCX += cx
+      sumCY += cy
+      count++
+
+      // 4-connected neighbors
+      if (cy > 0 && cells[ci - cW] >= THRESH && !visited[ci - cW]) { visited[ci - cW] = 1; queue[tail++] = ci - cW }
+      if (cy < cH - 1 && cells[ci + cW] >= THRESH && !visited[ci + cW]) { visited[ci + cW] = 1; queue[tail++] = ci + cW }
+      if (cx > 0 && cells[ci - 1] >= THRESH && !visited[ci - 1]) { visited[ci - 1] = 1; queue[tail++] = ci - 1 }
+      if (cx < cW - 1 && cells[ci + 1] >= THRESH && !visited[ci + 1]) { visited[ci + 1] = 1; queue[tail++] = ci + 1 }
+    }
+
+    // Filter: club head is small (1–40 cells) but body parts are large (40+ cells)
+    if (count >= 1 && count <= 40) {
+      components.push({
+        cx: sumCX / count,
+        cy: sumCY / count,
+        size: count,
+        density: totalScore / count,
+      })
+    }
+  }
+
+  if (components.length === 0) return null
+
+  // Score each component: high motion density + small size = club head
+  // Body parts are large and slow; club head is tiny and fast
+  let bestScore = 0
+  let best: typeof components[0] | null = null
+
+  for (const comp of components) {
+    // density * inverse-size: prefers small, fast objects
+    const score = comp.density * (6 / Math.max(1, comp.size))
+    if (score > bestScore) {
+      bestScore = score
+      best = comp
+    }
+  }
+
+  if (!best || bestScore < 8) return null
 
   return {
-    x: ((bestCX + 0.5) * cellSize) / width,
-    y: ((bestCY + 0.5) * cellSize) / height,
-    score: maxScore,
+    x: ((best.cx + 0.5) * cellSize) / W,
+    y: ((best.cy + 0.5) * cellSize) / H,
+    score: bestScore,
   }
 }
 
-// Remove outliers: points that are > 2 standard deviations from the running path
-function filterOutliers(points: ClubPathPoint[]): ClubPathPoint[] {
-  if (points.length < 4) return points
-
-  const xs = points.map(p => p.x)
-  const ys = points.map(p => p.y)
-  const meanX = xs.reduce((a, b) => a + b, 0) / xs.length
-  const meanY = ys.reduce((a, b) => a + b, 0) / ys.length
-  const stdX = Math.sqrt(xs.map(x => (x - meanX) ** 2).reduce((a, b) => a + b, 0) / xs.length)
-  const stdY = Math.sqrt(ys.map(y => (y - meanY) ** 2).reduce((a, b) => a + b, 0) / ys.length)
-
-  return points.filter(
-    p =>
-      Math.abs(p.x - meanX) <= stdX * 2.2 &&
-      Math.abs(p.y - meanY) <= stdY * 2.2
-  )
+// Exponential moving average smoothing
+function smoothPoints(pts: ClubPathPoint[]): ClubPathPoint[] {
+  if (pts.length <= 2) return pts
+  const alpha = 0.45
+  const out = [pts[0]]
+  for (let i = 1; i < pts.length; i++) {
+    out.push({
+      time: pts[i].time,
+      x: alpha * pts[i].x + (1 - alpha) * out[i - 1].x,
+      y: alpha * pts[i].y + (1 - alpha) * out[i - 1].y,
+    })
+  }
+  return out
 }
 
+// Remove points that jump too far from neighbors (tracking errors)
+function filterJumps(pts: ClubPathPoint[]): ClubPathPoint[] {
+  if (pts.length < 3) return pts
+  const out: ClubPathPoint[] = [pts[0]]
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = out[out.length - 1]
+    const curr = pts[i]
+    const next = pts[i + 1]
+    const dPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y)
+    const dNext = Math.hypot(curr.x - next.x, curr.y - next.y)
+    // Keep if consistent with neighbors
+    if (dPrev < 0.18 || dNext < 0.18) out.push(curr)
+  }
+  out.push(pts[pts.length - 1])
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 export function useClubPath() {
   const [isTracking, setIsTracking] = useState(false)
   const [path1, setPath1] = useState<ClubPathData>({ ...EMPTY_PATH })
   const [path2, setPath2] = useState<ClubPathData>({ ...EMPTY_PATH })
   const [pathColor, setPathColor] = useState('#ffff00')
-  const [strokeWidth, setStrokeWidth] = useState(3)
+  const [strokeWidth, setStrokeWidth] = useState(4)
   const [traceProgress, setTraceProgress] = useState<TraceProgress>({
     current: 0, total: 0, status: 'idle', message: '',
   })
 
   const toggleTracking = useCallback(() => setIsTracking(v => !v), [])
 
-  const addPoint = useCallback(
-    (p: Point, time: number, slot: 1 | 2) => {
-      const newPt: ClubPathPoint = { time, x: p.x, y: p.y }
-      const setter = slot === 1 ? setPath1 : setPath2
-      setter(prev => ({
-        ...prev,
-        points: [...prev.points, newPt].sort((a, b) => a.time - b.time),
-        color: pathColor,
-        strokeWidth,
-      }))
-    },
-    [pathColor, strokeWidth]
-  )
+  const addPoint = useCallback((p: Point, time: number, slot: 1 | 2) => {
+    const setter = slot === 1 ? setPath1 : setPath2
+    setter(prev => ({
+      ...prev,
+      points: [...prev.points, { time, x: p.x, y: p.y }].sort((a, b) => a.time - b.time),
+      color: pathColor,
+      strokeWidth,
+    }))
+  }, [pathColor, strokeWidth])
 
-  // Motion-based trace — fast, no API calls, uses canvas pixel differencing
-  const motionTrace = useCallback(
-    async (video: HTMLVideoElement, slot: 1 | 2, frameCount = 80) => {
-      if (!video || video.duration === 0) return
+  const motionTrace = useCallback(async (video: HTMLVideoElement, slot: 1 | 2, frameCount = 90) => {
+    if (!video || video.duration === 0) return
 
-      const setter = slot === 1 ? setPath1 : setPath2
-      const duration = video.duration
-      const wasPlaying = !video.paused
-      video.pause()
+    const setter = slot === 1 ? setPath1 : setPath2
+    const duration = video.duration
+    const wasPlaying = !video.paused
+    video.pause()
 
-      // Trim first/last 2% to avoid setup/static frames
-      const start = duration * 0.02
-      const end = duration * 0.98
-      const times = Array.from(
-        { length: frameCount },
-        (_, i) => start + ((end - start) / (frameCount - 1)) * i
-      )
+    // Skip first 3% and last 3% (usually static)
+    const start = duration * 0.03
+    const end = duration * 0.97
+    const times = Array.from({ length: frameCount }, (_, i) =>
+      start + ((end - start) / (frameCount - 1)) * i
+    )
 
-      // Small canvas for performance — 480px wide
-      const W = 480
-      const H = Math.round((video.videoHeight / video.videoWidth) * W) || 270
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+    // Working resolution — small enough for perf, big enough for accuracy
+    const W = 320
+    const H = Math.round((video.videoHeight / video.videoWidth) * W) || 180
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
 
-      let prevData: Uint8ClampedArray | null = null
-      const collected: ClubPathPoint[] = []
+    let prevData: Uint8ClampedArray | null = null
+    const raw: ClubPathPoint[] = []
 
-      setTraceProgress({ current: 0, total: frameCount, status: 'running', message: 'Starting motion analysis...' })
+    setTraceProgress({ current: 0, total: frameCount, status: 'running', message: 'Starting club head detection...' })
 
-      for (let i = 0; i < times.length; i++) {
-        try {
-          await seekTo(video, times[i])
-          ctx.drawImage(video, 0, 0, W, H)
-          const frame = ctx.getImageData(0, 0, W, H)
-          const curr = frame.data
+    for (let i = 0; i < times.length; i++) {
+      try {
+        await seekTo(video, times[i])
+        ctx.drawImage(video, 0, 0, W, H)
+        const curr = ctx.getImageData(0, 0, W, H).data
 
-          if (prevData) {
-            const hit = findMaxMotionCell(prevData, curr, W, H, 12)
-            if (hit) {
-              collected.push({ time: times[i], x: hit.x, y: hit.y })
-              // Live update
-              const filtered = filterOutliers([...collected])
-              setter(prev => ({
-                ...prev,
-                points: filtered.sort((a, b) => a.time - b.time),
-                color: pathColor,
-                strokeWidth,
-              }))
-            }
-          }
+        if (prevData) {
+          const hit = detectClubHead(prevData, curr, W, H)
+          if (hit) {
+            raw.push({ time: times[i], x: hit.x, y: hit.y })
 
-          prevData = new Uint8ClampedArray(curr)
-        } catch {
-          // skip failed seeks
-        }
-
-        setTraceProgress({
-          current: i + 1,
-          total: frameCount,
-          status: 'running',
-          message: `Analyzing motion... ${i + 1}/${frameCount} frames`,
-        })
-      }
-
-      // Final filter pass
-      const final = filterOutliers(collected).sort((a, b) => a.time - b.time)
-      setter(prev => ({ ...prev, points: final, color: pathColor, strokeWidth }))
-
-      if (wasPlaying) video.play()
-
-      setTraceProgress({
-        current: frameCount,
-        total: frameCount,
-        status: 'done',
-        message: `Done — ${final.length} points traced`,
-      })
-      setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 3000)
-    },
-    [pathColor, strokeWidth]
-  )
-
-  // AI-assisted trace — more accurate but slower (uses Claude vision)
-  const aiTrace = useCallback(
-    async (video: HTMLVideoElement, slot: 1 | 2, sampleCount = 24) => {
-      if (!video || video.duration === 0) return
-
-      const setter = slot === 1 ? setPath1 : setPath2
-      const duration = video.duration
-      const wasPlaying = !video.paused
-      video.pause()
-
-      const start = duration * 0.05
-      const end = duration * 0.95
-      const times = Array.from(
-        { length: sampleCount },
-        (_, i) => start + ((end - start) / (sampleCount - 1)) * i
-      )
-
-      const W = 960
-      const H = Math.round((video.videoHeight / video.videoWidth) * W) || 540
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      const ctx = canvas.getContext('2d')!
-
-      const collected: ClubPathPoint[] = []
-      setTraceProgress({ current: 0, total: sampleCount, status: 'running', message: 'AI detecting club head...' })
-
-      for (let i = 0; i < times.length; i++) {
-        try {
-          await seekTo(video, times[i])
-          ctx.drawImage(video, 0, 0, W, H)
-          const frame = stripDataUrlPrefix(canvas.toDataURL('image/jpeg', 0.82))
-
-          const res = await fetch('/api/golf-trace', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ frame, frameTime: times[i] }),
-          })
-          const data = await res.json()
-
-          if (data.x !== null && data.y !== null && data.confidence !== 'none') {
-            collected.push({ time: times[i], x: data.x, y: data.y })
+            // Live preview (unsmoothed)
             setter(prev => ({
               ...prev,
-              points: [...collected].sort((a, b) => a.time - b.time),
+              points: [...raw],
               color: pathColor,
               strokeWidth,
             }))
           }
-        } catch {
-          // skip
         }
 
-        setTraceProgress({
-          current: i + 1,
-          total: sampleCount,
-          status: 'running',
-          message: `AI analyzing frame ${i + 1}/${sampleCount}...`,
-        })
-      }
-
-      if (wasPlaying) video.play()
+        prevData = new Uint8ClampedArray(curr)
+      } catch { /* skip bad seeks */ }
 
       setTraceProgress({
-        current: sampleCount,
-        total: sampleCount,
-        status: 'done',
-        message: `AI done — ${collected.length}/${sampleCount} frames detected`,
+        current: i + 1,
+        total: frameCount,
+        status: 'running',
+        message: `Detecting club head... ${i + 1}/${frameCount}`,
       })
-      setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 3000)
-    },
-    [pathColor, strokeWidth]
-  )
+    }
+
+    // Post-processing: filter jumps → smooth
+    const final = smoothPoints(filterJumps(raw.sort((a, b) => a.time - b.time)))
+    setter(prev => ({ ...prev, points: final, color: pathColor, strokeWidth }))
+
+    if (wasPlaying) video.play()
+
+    setTraceProgress({ current: frameCount, total: frameCount, status: 'done', message: `Done — ${final.length} points` })
+    setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 4000)
+  }, [pathColor, strokeWidth])
+
+  const aiTrace = useCallback(async (video: HTMLVideoElement, slot: 1 | 2, sampleCount = 24) => {
+    if (!video || video.duration === 0) return
+
+    const setter = slot === 1 ? setPath1 : setPath2
+    const duration = video.duration
+    const wasPlaying = !video.paused
+    video.pause()
+
+    const start = duration * 0.05
+    const end = duration * 0.95
+    const times = Array.from({ length: sampleCount }, (_, i) =>
+      start + ((end - start) / (sampleCount - 1)) * i
+    )
+
+    const W = 960
+    const H = Math.round((video.videoHeight / video.videoWidth) * W) || 540
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')!
+
+    const collected: ClubPathPoint[] = []
+    setTraceProgress({ current: 0, total: sampleCount, status: 'running', message: 'AI detecting club head...' })
+
+    for (let i = 0; i < times.length; i++) {
+      try {
+        await seekTo(video, times[i])
+        ctx.drawImage(video, 0, 0, W, H)
+        const frame = stripDataUrlPrefix(canvas.toDataURL('image/jpeg', 0.82))
+
+        const res = await fetch('/api/golf-trace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frame, frameTime: times[i] }),
+        })
+        const data = await res.json()
+
+        if (data.x !== null && data.y !== null && data.confidence !== 'none') {
+          collected.push({ time: times[i], x: data.x, y: data.y })
+          setter(prev => ({
+            ...prev,
+            points: [...collected].sort((a, b) => a.time - b.time),
+            color: pathColor,
+            strokeWidth,
+          }))
+        }
+      } catch { /* skip */ }
+
+      setTraceProgress({
+        current: i + 1,
+        total: sampleCount,
+        status: 'running',
+        message: `AI frame ${i + 1}/${sampleCount}...`,
+      })
+    }
+
+    if (wasPlaying) video.play()
+    setTraceProgress({ current: sampleCount, total: sampleCount, status: 'done', message: `AI done — ${collected.length}/${sampleCount} detected` })
+    setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 4000)
+  }, [pathColor, strokeWidth])
 
   const clearPath = useCallback((slot: 1 | 2 | 'both') => {
     if (slot === 1 || slot === 'both') setPath1(p => ({ ...p, points: [] }))
@@ -316,19 +360,8 @@ export function useClubPath() {
   }, [])
 
   return {
-    isTracking,
-    path1,
-    path2,
-    pathColor,
-    strokeWidth,
-    traceProgress,
-    toggleTracking,
-    addPoint,
-    motionTrace,
-    aiTrace,
-    clearPath,
-    toggleVisible,
-    updateColor,
-    updateStrokeWidth,
+    isTracking, path1, path2, pathColor, strokeWidth, traceProgress,
+    toggleTracking, addPoint, motionTrace, aiTrace,
+    clearPath, toggleVisible, updateColor, updateStrokeWidth,
   }
 }

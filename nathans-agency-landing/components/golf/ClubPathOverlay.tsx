@@ -7,10 +7,11 @@ interface Props {
   pathData: ClubPathData
 }
 
-function catmullRom(
+// Catmull-Rom spline through points
+function splinePath(
   ctx: CanvasRenderingContext2D,
   pts: [number, number][],
-  tension = 0.5
+  tension = 0.4
 ) {
   if (pts.length < 2) return
   ctx.beginPath()
@@ -29,7 +30,93 @@ function catmullRom(
 
     ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1])
   }
+}
+
+// Draw a glowing neon line — multiple passes like Swing Profile
+function drawNeonLine(
+  ctx: CanvasRenderingContext2D,
+  pts: [number, number][],
+  color: string,
+  baseWidth: number,
+  alpha: number
+) {
+  if (pts.length < 2) return
+
+  // Pass 1: wide outer glow
+  ctx.save()
+  ctx.globalAlpha = alpha * 0.12
+  ctx.strokeStyle = color
+  ctx.lineWidth = baseWidth * 6
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowBlur = 0
+  splinePath(ctx, pts)
   ctx.stroke()
+  ctx.restore()
+
+  // Pass 2: mid glow
+  ctx.save()
+  ctx.globalAlpha = alpha * 0.25
+  ctx.strokeStyle = color
+  ctx.lineWidth = baseWidth * 3.5
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowBlur = baseWidth * 4
+  ctx.shadowColor = color
+  splinePath(ctx, pts)
+  ctx.stroke()
+  ctx.restore()
+
+  // Pass 3: bright core
+  ctx.save()
+  ctx.globalAlpha = alpha * 0.9
+  ctx.strokeStyle = color
+  ctx.lineWidth = baseWidth
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowBlur = baseWidth * 3
+  ctx.shadowColor = color
+  splinePath(ctx, pts)
+  ctx.stroke()
+  ctx.restore()
+
+  // Pass 4: white hot center (super thin)
+  ctx.save()
+  ctx.globalAlpha = alpha * 0.6
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = Math.max(1, baseWidth * 0.35)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowBlur = baseWidth * 2
+  ctx.shadowColor = '#ffffff'
+  splinePath(ctx, pts)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawDot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+  isImpact: boolean
+) {
+  ctx.save()
+  ctx.globalAlpha = 0.95
+  ctx.shadowBlur = r * 4
+  ctx.shadowColor = isImpact ? '#ffffff' : color
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fillStyle = isImpact ? '#ffffff' : color
+  ctx.fill()
+  if (isImpact) {
+    ctx.globalAlpha = 0.5
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  }
+  ctx.restore()
 }
 
 export function ClubPathOverlay({ pathData }: Props) {
@@ -47,76 +134,42 @@ export function ClubPathOverlay({ pathData }: Props) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    if (!pathData.visible || pathData.points.length < 2) {
-      // Draw dots for single points
-      if (pathData.visible && pathData.points.length === 1) {
-        ctx.save()
-        ctx.scale(dpr, dpr)
-        ctx.fillStyle = pathData.color
-        ctx.globalAlpha = 0.9
-        ctx.beginPath()
-        ctx.arc(
-          pathData.points[0].x * cssW,
-          pathData.points[0].y * cssH,
-          5, 0, Math.PI * 2
-        )
-        ctx.fill()
-        ctx.restore()
-      }
-      return
-    }
+    const { points, color, strokeWidth, visible } = pathData
+    if (!visible || points.length === 0) return
 
     ctx.save()
     ctx.scale(dpr, dpr)
-    ctx.strokeStyle = pathData.color
-    ctx.lineWidth = pathData.strokeWidth
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.globalAlpha = 0.85
 
-    const sorted = [...pathData.points].sort((a, b) => a.time - b.time)
+    const sorted = [...points].sort((a, b) => a.time - b.time)
 
-    // Find the lowest point (roughly = impact zone)
-    let lowestIdx = 0
-    let lowestY = -Infinity
-    sorted.forEach((p, i) => {
-      if (p.y > lowestY) { lowestY = p.y; lowestIdx = i }
-    })
+    // Find the lowest Y point as approximate impact zone
+    let impactIdx = 0
+    let maxY = -Infinity
+    sorted.forEach((p, i) => { if (p.y > maxY) { maxY = p.y; impactIdx = i } })
 
-    const backswing = sorted.slice(0, lowestIdx + 1)
-    const downswing = sorted.slice(lowestIdx)
+    const backswing = sorted.slice(0, impactIdx + 1)
+    const throughSwing = sorted.slice(impactIdx)
 
-    // Draw backswing (lighter / dashed)
+    const toPx = (pts: ClubPathPoint[]): [number, number][] =>
+      pts.map(p => [p.x * cssW, p.y * cssH])
+
+    // Draw backswing slightly dimmer and dashed-ish
     if (backswing.length >= 2) {
-      ctx.setLineDash([6, 4])
-      ctx.globalAlpha = 0.55
-      ctx.strokeStyle = pathData.color
-      const bsPts: [number, number][] = backswing.map(p => [p.x * cssW, p.y * cssH])
-      catmullRom(ctx, bsPts)
+      drawNeonLine(ctx, toPx(backswing), color, strokeWidth, 0.55)
     }
 
-    // Draw downswing / through-swing (solid, bright)
-    if (downswing.length >= 2) {
-      ctx.setLineDash([])
-      ctx.globalAlpha = 0.9
-      ctx.strokeStyle = pathData.color
-      const dsPts: [number, number][] = downswing.map(p => [p.x * cssW, p.y * cssH])
-      catmullRom(ctx, dsPts)
+    // Draw through-swing bright and solid
+    if (throughSwing.length >= 2) {
+      drawNeonLine(ctx, toPx(throughSwing), color, strokeWidth, 0.95)
     }
 
-    // Draw dots at each marked point
-    ctx.setLineDash([])
-    ctx.globalAlpha = 1
-    sorted.forEach((p, i) => {
-      const isImpact = i === lowestIdx
-      ctx.beginPath()
-      ctx.fillStyle = isImpact ? '#ffffff' : pathData.color
-      ctx.arc(p.x * cssW, p.y * cssH, isImpact ? 6 : 4, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#000000'
-      ctx.lineWidth = 1
-      ctx.stroke()
-    })
+    // Draw dots at each detected position
+    if (sorted.length > 0) {
+      const dotR = Math.max(2.5, strokeWidth * 0.7)
+      sorted.forEach((p, i) => {
+        drawDot(ctx, p.x * cssW, p.y * cssH, dotR, color, i === impactIdx)
+      })
+    }
 
     // Arrow at end of path
     if (sorted.length >= 2) {
@@ -128,15 +181,25 @@ export function ClubPathOverlay({ pathData }: Props) {
       )
       const ax = last.x * cssW
       const ay = last.y * cssH
-      const size = 10
-      ctx.fillStyle = pathData.color
+      const arrowSize = strokeWidth * 3.5
+      ctx.save()
       ctx.globalAlpha = 0.9
+      ctx.fillStyle = color
+      ctx.shadowBlur = 8
+      ctx.shadowColor = color
       ctx.beginPath()
       ctx.moveTo(ax, ay)
-      ctx.lineTo(ax - size * Math.cos(angle - Math.PI / 6), ay - size * Math.sin(angle - Math.PI / 6))
-      ctx.lineTo(ax - size * Math.cos(angle + Math.PI / 6), ay - size * Math.sin(angle + Math.PI / 6))
+      ctx.lineTo(
+        ax - arrowSize * Math.cos(angle - Math.PI / 5),
+        ay - arrowSize * Math.sin(angle - Math.PI / 5)
+      )
+      ctx.lineTo(
+        ax - arrowSize * Math.cos(angle + Math.PI / 5),
+        ay - arrowSize * Math.sin(angle + Math.PI / 5)
+      )
       ctx.closePath()
       ctx.fill()
+      ctx.restore()
     }
 
     ctx.restore()
