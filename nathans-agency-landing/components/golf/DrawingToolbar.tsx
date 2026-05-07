@@ -28,6 +28,7 @@ interface Props {
   color: string
   strokeWidth: number
   targetVideo: 1 | 2 | 'both'
+  disabled?: boolean
   canUndo: boolean
   canRedo: boolean
   onSetTool: (tool: DrawingTool) => void
@@ -42,12 +43,13 @@ interface Props {
 
 export function DrawingToolbar({
   activeTool, color, strokeWidth, targetVideo, canUndo, canRedo,
+  disabled,
   onSetTool, onSetColor, onSetStrokeWidth, onSetTarget,
   onUndo, onRedo, onClear, hasVideo2,
 }: Props) {
   return (
     <TooltipProvider delayDuration={400}>
-      <div className="flex flex-wrap items-center gap-2 px-2 py-2 bg-zinc-900 rounded-lg border border-zinc-800">
+      <div className={`flex flex-wrap items-center gap-2 px-2 py-2 bg-zinc-900 rounded-lg border border-zinc-800 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         {/* Tools */}
         <div className="flex items-center gap-1">
           {TOOLS.map(t => (

@@ -6,62 +6,64 @@ import { VideoPanel, type VideoPanelHandle } from './VideoPanel'
 import { VideoControls } from './VideoControls'
 import { VideoScrubber } from './VideoScrubber'
 import { DrawingToolbar } from './DrawingToolbar'
+import { ClubPathToolbar } from './ClubPathToolbar'
 import { AIChatPanel } from './AIChatPanel'
 import { useVideoSync } from '@/hooks/golf/useVideoSync'
 import { useDrawing } from '@/hooks/golf/useDrawing'
 import { useAnnotations } from '@/hooks/golf/useAnnotations'
 import { useFrameCapture } from '@/hooks/golf/useFrameCapture'
 import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
-import type { Annotation } from '@/lib/golf/annotationTypes'
-import { Layers, Layers2 } from 'lucide-react'
+import { useClubPath } from '@/hooks/golf/useClubPath'
+import type { Annotation, Point } from '@/lib/golf/annotationTypes'
+import { Layers, Columns2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 
 export function GolfAnalyzer() {
   const [video1Url, setVideo1Url] = useState<string | null>(null)
   const [video2Url, setVideo2Url] = useState<string | null>(null)
-  const [video1File, setVideo1File] = useState<File | null>(null)
-  const [video2File, setVideo2File] = useState<File | null>(null)
-  const [overlayOpacity, setOverlayOpacity] = useState(0)
+  const [overlayOpacity, setOverlayOpacity] = useState(50)
   const [showOverlay, setShowOverlay] = useState(false)
   const [mode, setMode] = useState<'dual' | 'single'>('dual')
 
-  const urlRefs = useRef<[string | null, string | null]>([null, null])
+  const urlRef1 = useRef<string | null>(null)
+  const urlRef2 = useRef<string | null>(null)
 
   const panel1Ref = useRef<VideoPanelHandle>(null)
   const panel2Ref = useRef<VideoPanelHandle>(null)
 
-  const videoSync = useVideoSync()
+  const sync = useVideoSync()
   const drawing = useDrawing()
   const annotations = useAnnotations()
+  const clubPath = useClubPath()
+
+  const annotationCanvas1 = panel1Ref.current?.annotationCanvasRef ?? { current: null }
+  const annotationCanvas2 = panel2Ref.current?.annotationCanvasRef ?? { current: null }
 
   const { captureFrames } = useFrameCapture(
-    videoSync.videoRef1,
-    videoSync.videoRef2,
-    panel1Ref.current?.annotationCanvasRef ?? { current: null },
-    panel2Ref.current?.annotationCanvasRef ?? { current: null }
+    sync.videoRef1,
+    sync.videoRef2,
+    annotationCanvas1,
+    annotationCanvas2
   )
 
-  const ai = useAIAnalysis(videoSync.currentTime)
+  const ai = useAIAnalysis(sync.currentTime)
 
-  const handleFileSelected = useCallback(
-    (file: File, slot: 1 | 2) => {
-      if (!file.name) return // from "Change" button with empty file
-      const oldUrl = urlRefs.current[slot - 1]
-      if (oldUrl) URL.revokeObjectURL(oldUrl)
+  const handleFileSelected = useCallback((file: File, slot: 1 | 2) => {
+    if (!file.name) return
+    if (slot === 1) {
+      if (urlRef1.current) URL.revokeObjectURL(urlRef1.current)
       const url = URL.createObjectURL(file)
-      urlRefs.current[slot - 1] = url
-      if (slot === 1) {
-        setVideo1Url(url)
-        setVideo1File(file)
-      } else {
-        setVideo2Url(url)
-        setVideo2File(file)
-        setMode('dual')
-      }
-    },
-    []
-  )
+      urlRef1.current = url
+      setVideo1Url(url)
+    } else {
+      if (urlRef2.current) URL.revokeObjectURL(urlRef2.current)
+      const url = URL.createObjectURL(file)
+      urlRef2.current = url
+      setVideo2Url(url)
+      if (mode === 'single') setMode('dual')
+    }
+  }, [mode])
 
   const handleAnnotationComplete = useCallback(
     (ann: Omit<Annotation, 'id' | 'source'>, slot: 1 | 2) => {
@@ -77,11 +79,16 @@ export function GolfAnalyzer() {
     [drawing.drawingState.targetVideo, annotations]
   )
 
+  const handleClubPathClick = useCallback(
+    (p: Point, time: number, slot: 1 | 2) => {
+      clubPath.addPoint(p, time, slot)
+    },
+    [clubPath]
+  )
+
   const handleSendMessage = useCallback(
     async (text: string, withFrames: boolean) => {
-      const frames = withFrames
-        ? captureFrames(video2Url ? [1, 2] : [1])
-        : {}
+      const frames = withFrames ? captureFrames(video2Url ? [1, 2] : [1]) : {}
       await ai.sendMessage(text, frames)
     },
     [captureFrames, video2Url, ai]
@@ -89,54 +96,58 @@ export function GolfAnalyzer() {
 
   const handleApplyAnnotations = useCallback(() => {
     if (ai.pendingAnnotations.length === 0) return
-    // Default to video 1 unless annotations specify
     annotations.addAIAnnotations(ai.pendingAnnotations, 1)
     ai.clearPendingAnnotations()
   }, [ai, annotations])
+
+  // When club path is tracking, disable drawing tool
+  const effectiveDrawingState = clubPath.isTracking
+    ? { ...drawing.drawingState, activeTool: 'select' as const }
+    : drawing.drawingState
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-white overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800 shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-green-400 font-bold text-lg">⛳ SwingIQ</span>
-          <span className="text-zinc-500 text-sm">AI Golf Analyzer</span>
+          <span className="text-green-400 font-bold text-lg tracking-tight">⛳ SwingIQ</span>
+          <span className="text-zinc-600 text-sm">AI Golf Analyzer</span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Overlay toggle */}
           {video1Url && video2Url && (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant={showOverlay ? 'secondary' : 'ghost'}
-                className="h-8 gap-1 text-xs text-zinc-300"
+                className={`h-8 gap-1.5 text-xs ${showOverlay ? 'bg-zinc-700 text-white' : 'text-zinc-400'}`}
                 onClick={() => setShowOverlay(v => !v)}
               >
-                <Layers className="h-3 w-3" />
+                <Layers className="h-3.5 w-3.5" />
                 Overlay
               </Button>
               {showOverlay && (
-                <div className="flex items-center gap-2 w-28">
+                <div className="flex items-center gap-2 w-32">
                   <Slider
                     min={0}
                     max={100}
                     step={5}
-                    value={[overlayOpacity * 100]}
-                    onValueChange={([v]) => setOverlayOpacity(v / 100)}
+                    value={[overlayOpacity]}
+                    onValueChange={([v]) => setOverlayOpacity(v)}
+                    className="flex-1"
                   />
-                  <span className="text-xs text-zinc-400 w-8">{Math.round(overlayOpacity * 100)}%</span>
+                  <span className="text-xs text-zinc-400 w-8 text-right">{overlayOpacity}%</span>
                 </div>
               )}
             </div>
           )}
           <Button
             size="sm"
-            variant={mode === 'single' ? 'secondary' : 'ghost'}
-            className="h-8 gap-1 text-xs text-zinc-300"
+            variant="ghost"
+            className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
             onClick={() => setMode(m => m === 'dual' ? 'single' : 'dual')}
           >
-            <Layers2 className="h-3 w-3" />
-            {mode === 'dual' ? 'Single' : 'Dual'}
+            <Columns2 className="h-3.5 w-3.5" />
+            {mode === 'dual' ? 'Single view' : 'Dual view'}
           </Button>
         </div>
       </div>
@@ -150,40 +161,46 @@ export function GolfAnalyzer() {
               <VideoPanel
                 ref={panel1Ref}
                 slot={1}
-                videoRef={videoSync.videoRef1 as React.RefObject<HTMLVideoElement | null>}
+                videoRef={sync.videoRef1 as React.RefObject<HTMLVideoElement | null>}
                 objectUrl={video1Url}
-                isMirrored={videoSync.isMirrored[0]}
+                isMirrored={sync.isMirrored[0]}
                 annotations={annotations.annotations1}
-                currentTime={videoSync.currentTime}
-                drawingState={drawing.drawingState}
+                currentTime={sync.currentTime}
+                drawingState={effectiveDrawingState}
                 isPersistent={drawing.drawingState.isPersistent}
+                clubPathActive={clubPath.isTracking}
+                clubPathData={clubPath.path1}
                 onFileSelected={handleFileSelected}
                 onAnnotationComplete={handleAnnotationComplete}
                 onStartDrawing={drawing.startDrawing}
                 onContinueDrawing={drawing.continueDrawing}
                 onFinishDrawing={drawing.finishDrawing}
                 onCancelDrawing={drawing.cancelDrawing}
-                onVideoLoaded={videoSync.onVideoLoaded}
+                onVideoLoaded={sync.onVideoLoaded}
+                onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
                 label="Video 1 — Current Swing"
               />
               {mode === 'dual' && (
                 <VideoPanel
                   ref={panel2Ref}
                   slot={2}
-                  videoRef={videoSync.videoRef2 as React.RefObject<HTMLVideoElement | null>}
+                  videoRef={sync.videoRef2 as React.RefObject<HTMLVideoElement | null>}
                   objectUrl={video2Url}
-                  isMirrored={videoSync.isMirrored[1]}
+                  isMirrored={sync.isMirrored[1]}
                   annotations={annotations.annotations2}
-                  currentTime={videoSync.currentTime}
-                  drawingState={drawing.drawingState}
+                  currentTime={sync.currentTime}
+                  drawingState={effectiveDrawingState}
                   isPersistent={drawing.drawingState.isPersistent}
+                  clubPathActive={clubPath.isTracking}
+                  clubPathData={clubPath.path2}
                   onFileSelected={handleFileSelected}
                   onAnnotationComplete={handleAnnotationComplete}
                   onStartDrawing={drawing.startDrawing}
                   onContinueDrawing={drawing.continueDrawing}
                   onFinishDrawing={drawing.finishDrawing}
                   onCancelDrawing={drawing.cancelDrawing}
-                  onVideoLoaded={videoSync.onVideoLoaded}
+                  onVideoLoaded={sync.onVideoLoaded}
+                  onClubPathClick={(p, time, slot) => handleClubPathClick(p, time, slot)}
                   label="Video 2 — Reference Swing"
                 />
               )}
@@ -191,26 +208,43 @@ export function GolfAnalyzer() {
 
             {/* Scrubber */}
             <VideoScrubber
-              currentTime={videoSync.currentTime}
-              duration={videoSync.duration}
-              abLoop={videoSync.abLoop}
-              onSeek={videoSync.seek}
+              currentTime={sync.currentTime}
+              duration={sync.duration}
+              abLoop={sync.abLoop}
+              onSeek={sync.seek}
             />
 
             {/* Playback controls */}
             <VideoControls
-              isPlaying={videoSync.isPlaying}
-              playbackRate={videoSync.playbackRate}
-              isMirrored={videoSync.isMirrored}
-              abLoop={videoSync.abLoop}
+              isPlaying={sync.isPlaying}
+              playbackRate={sync.playbackRate}
+              isMirrored={sync.isMirrored}
+              abLoop={sync.abLoop}
               hasVideo1={!!video1Url}
               hasVideo2={!!video2Url}
-              onTogglePlay={videoSync.togglePlay}
-              onStepFrame={videoSync.stepFrame}
-              onSetSpeed={videoSync.setPlaybackRate}
-              onToggleMirror={videoSync.toggleMirror}
-              onSetLoopPoint={videoSync.setLoopPoint}
-              onClearLoop={videoSync.clearLoop}
+              onTogglePlay={sync.togglePlay}
+              onStepFrame={sync.stepFrame}
+              onSetSpeed={sync.setPlaybackRate}
+              onToggleMirror={sync.toggleMirror}
+              onSetLoopPoint={sync.setLoopPoint}
+              onClearLoop={sync.clearLoop}
+            />
+
+            {/* Club path tracker */}
+            <ClubPathToolbar
+              isTracking={clubPath.isTracking}
+              pathColor={clubPath.pathColor}
+              strokeWidth={clubPath.strokeWidth}
+              hasPath1={clubPath.path1.points.length > 0}
+              hasPath2={clubPath.path2.points.length > 0}
+              path1Visible={clubPath.path1.visible}
+              path2Visible={clubPath.path2.visible}
+              hasVideo2={!!video2Url}
+              onToggleTracking={clubPath.toggleTracking}
+              onUpdateColor={clubPath.updateColor}
+              onUpdateStrokeWidth={clubPath.updateStrokeWidth}
+              onClearPath={clubPath.clearPath}
+              onToggleVisible={clubPath.toggleVisible}
             />
 
             {/* Drawing toolbar */}
@@ -221,6 +255,7 @@ export function GolfAnalyzer() {
               targetVideo={drawing.drawingState.targetVideo}
               canUndo={annotations.canUndo}
               canRedo={annotations.canRedo}
+              disabled={clubPath.isTracking}
               onSetTool={drawing.setTool}
               onSetColor={drawing.setColor}
               onSetStrokeWidth={drawing.setStrokeWidth}

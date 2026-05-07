@@ -4,7 +4,9 @@ import { useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from 
 import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
-import type { Annotation, DrawingState } from '@/lib/golf/annotationTypes'
+import { ClubPathOverlay } from './ClubPathOverlay'
+import type { Annotation, DrawingState, Point } from '@/lib/golf/annotationTypes'
+import type { ClubPathData } from '@/hooks/golf/useClubPath'
 
 export interface VideoPanelHandle {
   annotationCanvasRef: React.RefObject<HTMLCanvasElement | null>
@@ -19,13 +21,16 @@ interface Props {
   currentTime: number
   drawingState: DrawingState
   isPersistent: boolean
+  clubPathActive: boolean
+  clubPathData: ClubPathData
   onFileSelected: (file: File, slot: 1 | 2) => void
   onAnnotationComplete: (ann: Omit<Annotation, 'id' | 'source'>, slot: 1 | 2) => void
-  onStartDrawing: (p: import('@/lib/golf/annotationTypes').Point) => void
-  onContinueDrawing: (p: import('@/lib/golf/annotationTypes').Point) => void
-  onFinishDrawing: () => import('@/lib/golf/annotationTypes').Point[] | null
+  onStartDrawing: (p: Point) => void
+  onContinueDrawing: (p: Point) => void
+  onFinishDrawing: () => Point[] | null
   onCancelDrawing: () => void
   onVideoLoaded: (slot: 1 | 2) => void
+  onClubPathClick: (p: Point, time: number, slot: 1 | 2) => void
   label: string
 }
 
@@ -40,6 +45,8 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       currentTime,
       drawingState,
       isPersistent,
+      clubPathActive,
+      clubPathData,
       onFileSelected,
       onAnnotationComplete,
       onStartDrawing,
@@ -47,18 +54,19 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       onFinishDrawing,
       onCancelDrawing,
       onVideoLoaded,
+      onClubPathClick,
       label,
     },
     ref
   ) => {
     const annotationCanvasRef = useRef<HTMLCanvasElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     useImperativeHandle(ref, () => ({
       annotationCanvasRef,
     }))
 
-    // Keep annotation canvas sized to container
     useEffect(() => {
       const container = containerRef.current
       if (!container) return
@@ -83,6 +91,22 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       [slot, onAnnotationComplete]
     )
 
+    const handleClubPathClick = useCallback(
+      (p: Point) => {
+        onClubPathClick(p, currentTime, slot)
+      },
+      [slot, currentTime, onClubPathClick]
+    )
+
+    const handleFileChange = useCallback(
+      (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (file) onFileSelected(file, slot)
+        e.target.value = ''
+      },
+      [slot, onFileSelected]
+    )
+
     const isActiveSlot = drawingState.targetVideo === slot || drawingState.targetVideo === 'both'
 
     return (
@@ -92,12 +116,21 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
             {label}
           </span>
           {objectUrl && (
-            <button
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              onClick={() => onFileSelected(new File([], ''), slot)}
-            >
-              Change
-            </button>
+            <>
+              <button
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Change video
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </>
           )}
         </div>
 
@@ -131,14 +164,17 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 currentTime={currentTime}
                 isPersistent={isPersistent}
               />
-              {isActiveSlot && (
+              <ClubPathOverlay pathData={clubPathData} />
+              {(isActiveSlot || clubPathActive) && (
                 <DrawingCanvas
                   drawingState={drawingState}
+                  clubPathActive={clubPathActive}
                   onAnnotationComplete={handleAnnotationComplete}
                   onStartDrawing={onStartDrawing}
                   onContinueDrawing={onContinueDrawing}
                   onFinishDrawing={onFinishDrawing}
                   onCancelDrawing={onCancelDrawing}
+                  onClubPathClick={handleClubPathClick}
                   currentTime={currentTime}
                 />
               )}
