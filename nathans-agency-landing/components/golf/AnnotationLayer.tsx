@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react'
+import { useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import type { Annotation } from '@/lib/golf/annotationTypes'
 import { drawAnnotation } from '@/lib/golf/drawingUtils'
 
@@ -16,19 +16,17 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
 
     useImperativeHandle(ref, () => canvasRef.current!, [])
 
-    useEffect(() => {
+    const drawAll = useCallback(() => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      const w = canvas.width
-      const h = canvas.height
       const dpr = window.devicePixelRatio || 1
-      const cssW = w / dpr
-      const cssH = h / dpr
+      const cssW = canvas.width / dpr
+      const cssH = canvas.height / dpr
 
-      ctx.clearRect(0, 0, w, h)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.save()
       ctx.scale(dpr, dpr)
 
@@ -37,7 +35,7 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
         : annotations.filter(
             ann =>
               ann.frameTime === undefined ||
-              Math.abs(ann.frameTime - currentTime) < 1 / 30
+              Math.abs(ann.frameTime - currentTime) < 1 / 30,
           )
 
       for (const ann of visible) {
@@ -46,6 +44,20 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
       ctx.restore()
     }, [annotations, currentTime, isPersistent])
 
+    // Redraw whenever annotations/time change
+    useEffect(() => { drawAll() }, [drawAll])
+
+    // Redraw when the canvas is resized — VideoPanel sets canvas.width/height which
+    // clears it, so we need to re-render. ResizeObserver on the canvas picks up the
+    // style change that VideoPanel makes alongside the pixel-size change.
+    useEffect(() => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const obs = new ResizeObserver(() => drawAll())
+      obs.observe(canvas)
+      return () => obs.disconnect()
+    }, [drawAll])
+
     return (
       <canvas
         ref={canvasRef}
@@ -53,7 +65,7 @@ export const AnnotationLayer = forwardRef<HTMLCanvasElement, Props>(
         style={{ zIndex: 1 }}
       />
     )
-  }
+  },
 )
 
 AnnotationLayer.displayName = 'AnnotationLayer'

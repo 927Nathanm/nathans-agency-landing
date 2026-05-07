@@ -38,71 +38,105 @@ function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Template matching — Sum of Absolute Differences (SAD)
-// Finds where templateData appears inside a search window of frameData
+// Inline 2D Kalman filter — constant-velocity model.
+// Bridges frames where the club head is motion-blurred (invisible to diff).
 // ---------------------------------------------------------------------------
-function matchTemplate(
-  tmpl: Uint8ClampedArray, tmplW: number, tmplH: number,
-  frame: Uint8ClampedArray, frameW: number, frameH: number,
-  searchCX: number, searchCY: number, searchR: number
-): { x: number; y: number; confidence: number } | null {
-  const x0 = Math.max(0, Math.round(searchCX - searchR))
-  const y0 = Math.max(0, Math.round(searchCY - searchR))
-  const x1 = Math.min(frameW - tmplW, Math.round(searchCX + searchR))
-  const y1 = Math.min(frameH - tmplH, Math.round(searchCY + searchR))
+class Kalman2D {
+  x: number; y: number
+  vx: number; vy: number
+  pv: number // position variance
 
-  if (x1 <= x0 || y1 <= y0) return null
+  constructor(x: number, y: number) {
+    this.x = x; this.y = y
+    this.vx = 0; this.vy = 0
+    this.pv = 1e6 // high initial uncertainty
+  }
 
-  let minSAD = Infinity
-  let bestX = searchCX
-  let bestY = searchCY
-  let secondMin = Infinity
+  predict(dt = 1) {
+    this.x += this.vx * dt
+    this.y += this.vy * dt
+    this.pv += 150 // process noise — allows velocity to change
+    return { x: this.x, y: this.y }
+  }
 
-  // Step 2 pixels for speed (still accurate enough for template size 20)
-  for (let y = y0; y < y1; y += 2) {
-    for (let x = x0; x < x1; x += 2) {
-      let sad = 0
-      for (let ty = 0; ty < tmplH; ty += 2) {
-        for (let tx = 0; tx < tmplW; tx += 2) {
-          const ti = (ty * tmplW + tx) * 4
-          const fi = ((y + ty) * frameW + (x + tx)) * 4
-          sad +=
-            Math.abs(tmpl[ti] - frame[fi]) +
-            Math.abs(tmpl[ti + 1] - frame[fi + 1]) +
-            Math.abs(tmpl[ti + 2] - frame[fi + 2])
-        }
+  update(mx: number, my: number, noise = 400) {
+    const K = this.pv / (this.pv + noise)
+    const dx = mx - this.x
+    const dy = my - this.y
+    // Blend velocity towards the new measurement direction
+    this.vx = this.vx * 0.55 + dx * K * 0.45
+    this.vy = this.vy * 0.55 + dy * K * 0.45
+    this.x += K * dx
+    this.y += K * dy
+    this.pv *= (1 - K)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Frame differencing — find moving pixels near a predicted point.
+// Weighted by motion strength × proximity so the fast-moving club head wins
+// over the slower-moving golfer body even when both are in the search window.
+// ---------------------------------------------------------------------------
+function findMotionNear(
+  prev: Uint8ClampedArray,
+  curr: Uint8ClampedArray,
+  W: number, H: number,
+  cx: number, cy: number,
+  searchR: number,
+  threshold = 20,
+): { x: number; y: number; strength: number } | null {
+  const x0 = Math.max(0, (cx - searchR) | 0)
+  const y0 = Math.max(0, (cy - searchR) | 0)
+  const x1 = Math.min(W - 1, (cx + searchR) | 0)
+  const y1 = Math.min(H - 1, (cy + searchR) | 0)
+
+  let swx = 0, swy = 0, sw = 0, maxDiff = 0
+
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = (y * W + x) * 4
+      const diff = (
+        Math.abs(curr[i]   - prev[i])   +
+        Math.abs(curr[i+1] - prev[i+1]) +
+        Math.abs(curr[i+2] - prev[i+2])
+      ) / 3
+
+      if (diff > threshold) {
+        const dist = Math.hypot(x - cx, y - cy)
+        // Weight: fast-moving objects get quadratic bonus; proximity scales by 0.04/px
+        const w = diff * diff / (1 + dist * 0.04)
+        swx += x * w; swy += y * w; sw += w
+        if (diff > maxDiff) maxDiff = diff
       }
-      if (sad < minSAD) { secondMin = minSAD; minSAD = sad; bestX = x + tmplW / 2; bestY = y + tmplH / 2 }
-      else if (sad < secondMin) secondMin = sad
     }
   }
 
-  // Confidence: ratio of second-best to best (higher = more unique match)
-  const confidence = secondMin > 0 ? minSAD / secondMin : 1
-  const pixelCount = (tmplW / 2) * (tmplH / 2) // sampled pixels
-  const maxSAD = pixelCount * 80 // reject if average error > 80 per pixel
-
-  if (minSAD > maxSAD) return null
-
-  return { x: bestX, y: bestY, confidence }
+  // Require enough weighted evidence to commit
+  const minWeight = searchR * threshold * 4
+  if (sw < minWeight) return null
+  return { x: swx / sw, y: swy / sw, strength: maxDiff }
 }
 
-// Smooth path with exponential moving average
+// Exponential moving average smoother — two passes for extra smoothness
 function smoothPoints(pts: ClubPathPoint[]): ClubPathPoint[] {
   if (pts.length <= 2) return pts
-  const alpha = 0.5
-  const out = [pts[0]]
-  for (let i = 1; i < pts.length; i++) {
-    out.push({
-      time: pts[i].time,
-      x: alpha * pts[i].x + (1 - alpha) * out[i - 1].x,
-      y: alpha * pts[i].y + (1 - alpha) * out[i - 1].y,
-    })
+  const pass = (arr: ClubPathPoint[], alpha: number) => {
+    const out = [arr[0]]
+    for (let i = 1; i < arr.length; i++) {
+      out.push({
+        time: arr[i].time,
+        x: alpha * arr[i].x + (1 - alpha) * out[i - 1].x,
+        y: alpha * arr[i].y + (1 - alpha) * out[i - 1].y,
+      })
+    }
+    return out
   }
-  return out
+  // Forward pass then backward pass — removes phase lag
+  const fwd = pass(pts, 0.4)
+  return pass([...fwd].reverse(), 0.4).reverse()
 }
 
-// Drop points that jump more than 15% of frame width from their neighbors
+// Drop points that jump more than 12% of frame width
 function filterJumps(pts: ClubPathPoint[]): ClubPathPoint[] {
   if (pts.length < 3) return pts
   const out: ClubPathPoint[] = [pts[0]]
@@ -110,9 +144,10 @@ function filterJumps(pts: ClubPathPoint[]): ClubPathPoint[] {
     const prev = out[out.length - 1]
     const p = pts[i]
     const next = pts[i + 1]
-    const dPrev = Math.hypot(p.x - prev.x, p.y - prev.y)
-    const dNext = Math.hypot(p.x - next.x, p.y - next.y)
-    if (dPrev < 0.15 || dNext < 0.15) out.push(p)
+    if (Math.hypot(p.x - prev.x, p.y - prev.y) < 0.12 ||
+        Math.hypot(p.x - next.x, p.y - next.y) < 0.12) {
+      out.push(p)
+    }
   }
   out.push(pts[pts.length - 1])
   return out
@@ -130,7 +165,6 @@ export function useClubPath() {
   const [traceProgress, setTraceProgress] = useState<TraceProgress>({
     current: 0, total: 0, status: 'idle', message: '',
   })
-  // Stores seeded template per slot so user only needs to click once
   const seedRef1 = useRef<{ time: number; x: number; y: number } | null>(null)
   const seedRef2 = useRef<{ time: number; x: number; y: number } | null>(null)
   const [hasSeed1, setHasSeed1] = useState(false)
@@ -138,7 +172,6 @@ export function useClubPath() {
 
   const toggleTracking = useCallback(() => setIsTracking(v => !v), [])
 
-  // Called when user manually clicks on the video while tracking is on
   const addPoint = useCallback((p: Point, time: number, slot: 1 | 2) => {
     const setter = slot === 1 ? setPath1 : setPath2
     setter(prev => ({
@@ -150,14 +183,18 @@ export function useClubPath() {
   }, [pathColor, strokeWidth])
 
   // ---------------------------------------------------------------------------
-  // Seeded template-matching trace
-  // User clicks on the club head → we lock onto that region and track everywhere
+  // Seeded frame-differencing trace with Kalman filter.
+  //
+  // User clicks on the club head → we note that pixel position.
+  // We then scan 110 frames in chronological order, diffing consecutive frames
+  // to find moving pixels.  Near the predicted club position (from Kalman), the
+  // fastest-moving blob is the club head.  When the club is fully motion-blurred
+  // (no visible edges) the Kalman constant-velocity model extrapolates the arc.
   // ---------------------------------------------------------------------------
   const seedAndTrack = useCallback(
     async (video: HTMLVideoElement, seedTime: number, seedX: number, seedY: number, slot: 1 | 2) => {
       if (!video || video.duration === 0) return
 
-      // Store seed for reference
       const seedObj = { time: seedTime, x: seedX, y: seedY }
       if (slot === 1) { seedRef1.current = seedObj; setHasSeed1(true) }
       else { seedRef2.current = seedObj; setHasSeed2(true) }
@@ -167,79 +204,97 @@ export function useClubPath() {
       const wasPlaying = !video.paused
       video.pause()
 
-      // Working resolution
       const W = 480
       const H = Math.round((video.videoHeight / video.videoWidth) * W) || 270
       const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
+      canvas.width = W; canvas.height = H
       const ctx = canvas.getContext('2d', { willReadFrequently: true })!
 
-      // Capture template around the click point
-      const TMPL = 22 // template size in pixels
+      const FRAMES = 110
+      const start = duration * 0.01
+      const end = duration * 0.99
+      const allTimes = Array.from({ length: FRAMES }, (_, i) =>
+        start + ((end - start) / (FRAMES - 1)) * i
+      ).sort((a, b) => a - b)
+
+      // Find the index closest to the seed time to split passes
+      const seedIdx = allTimes.reduce((best, t, i) =>
+        Math.abs(t - seedTime) < Math.abs(allTimes[best] - seedTime) ? i : best, 0)
+
+      const beforeTimes = allTimes.slice(0, seedIdx + 1)   // ends at ~seedTime
+      const afterTimes  = allTimes.slice(seedIdx)           // starts at ~seedTime
+
+      const TOTAL = beforeTimes.length + afterTimes.length
+      setTraceProgress({ current: 0, total: TOTAL, status: 'running', message: 'Seeding tracker...' })
+
       const seedPxX = seedX * W
       const seedPxY = seedY * H
-      const tmplX = Math.max(0, Math.round(seedPxX - TMPL / 2))
-      const tmplY = Math.max(0, Math.round(seedPxY - TMPL / 2))
-
-      await seekTo(video, seedTime)
-      ctx.drawImage(video, 0, 0, W, H)
-      const tmplData = ctx.getImageData(tmplX, tmplY, TMPL, TMPL).data
-
-      // Sample 80 evenly-spaced times across the full video
-      const FRAMES = 80
-      const start = duration * 0.02
-      const end = duration * 0.98
-      const times = Array.from({ length: FRAMES }, (_, i) =>
-        start + ((end - start) / (FRAMES - 1)) * i
-      )
-
-      setTraceProgress({ current: 0, total: FRAMES, status: 'running', message: 'Tracking club head from your click...' })
 
       const collected: ClubPathPoint[] = [{ time: seedTime, x: seedX, y: seedY }]
 
-      // --- Forward pass (seed → end) ---
-      let cx = seedPxX, cy = seedPxY, searchR = 38
+      // ---- Forward pass: seedTime → end ----
+      const kfFwd = new Kalman2D(seedPxX, seedPxY)
 
-      for (const t of times.filter(t => t >= seedTime).sort((a, b) => a - b)) {
+      await seekTo(video, afterTimes[0])
+      ctx.drawImage(video, 0, 0, W, H)
+      let prevData = new Uint8ClampedArray(ctx.getImageData(0, 0, W, H).data)
+
+      for (let i = 1; i < afterTimes.length; i++) {
+        const t = afterTimes[i]
         try {
           await seekTo(video, t)
           ctx.drawImage(video, 0, 0, W, H)
-          const frame = ctx.getImageData(0, 0, W, H).data
-          const match = matchTemplate(tmplData, TMPL, TMPL, frame, W, H, cx, cy, searchR)
-          if (match) {
-            collected.push({ time: t, x: match.x / W, y: match.y / H })
-            // Grow search radius near impact where club moves fastest
-            searchR = Math.min(90, searchR + 4)
-            cx = match.x; cy = match.y
-          } else {
-            // Lost tracking — expand search window
-            searchR = Math.min(120, searchR + 10)
-          }
-        } catch { /* skip */ }
+          const currData = new Uint8ClampedArray(ctx.getImageData(0, 0, W, H).data)
 
-        setTraceProgress(p => ({ ...p, current: p.current + 1, message: `Tracking forward... ${p.current + 1}/${FRAMES}` }))
+          const speed = Math.hypot(kfFwd.vx, kfFwd.vy)
+          const searchR = Math.min(130, 45 + speed * 2.5)
+          const pred = kfFwd.predict()
+          const motion = findMotionNear(prevData, currData, W, H, pred.x, pred.y, searchR)
+
+          if (motion) {
+            kfFwd.update(motion.x, motion.y)
+            collected.push({ time: t, x: kfFwd.x / W, y: kfFwd.y / H })
+          } else {
+            // Blurred frame — trust Kalman prediction
+            collected.push({ time: t, x: pred.x / W, y: pred.y / H })
+          }
+
+          prevData = currData
+        } catch { /* skip bad seek */ }
+
+        setTraceProgress(p => ({ ...p, current: p.current + 1, message: `Tracking forward... ${i}/${afterTimes.length - 1}` }))
       }
 
-      // --- Backward pass (seed → start) ---
-      cx = seedPxX; cy = seedPxY; searchR = 38
+      // ---- Backward pass: seedTime → start ----
+      const kfBwd = new Kalman2D(seedPxX, seedPxY)
 
-      for (const t of times.filter(t => t < seedTime).sort((a, b) => b - a)) {
+      await seekTo(video, beforeTimes[beforeTimes.length - 1])
+      ctx.drawImage(video, 0, 0, W, H)
+      prevData = new Uint8ClampedArray(ctx.getImageData(0, 0, W, H).data)
+
+      for (let i = beforeTimes.length - 2; i >= 0; i--) {
+        const t = beforeTimes[i]
         try {
           await seekTo(video, t)
           ctx.drawImage(video, 0, 0, W, H)
-          const frame = ctx.getImageData(0, 0, W, H).data
-          const match = matchTemplate(tmplData, TMPL, TMPL, frame, W, H, cx, cy, searchR)
-          if (match) {
-            collected.push({ time: t, x: match.x / W, y: match.y / H })
-            searchR = Math.min(90, searchR + 4)
-            cx = match.x; cy = match.y
+          const currData = new Uint8ClampedArray(ctx.getImageData(0, 0, W, H).data)
+
+          const speed = Math.hypot(kfBwd.vx, kfBwd.vy)
+          const searchR = Math.min(130, 45 + speed * 2.5)
+          const pred = kfBwd.predict()
+          const motion = findMotionNear(prevData, currData, W, H, pred.x, pred.y, searchR)
+
+          if (motion) {
+            kfBwd.update(motion.x, motion.y)
+            collected.push({ time: t, x: kfBwd.x / W, y: kfBwd.y / H })
           } else {
-            searchR = Math.min(120, searchR + 10)
+            collected.push({ time: t, x: pred.x / W, y: pred.y / H })
           }
+
+          prevData = currData
         } catch { /* skip */ }
 
-        setTraceProgress(p => ({ ...p, current: p.current + 1, message: `Tracking backward... ${p.current + 1}/${FRAMES}` }))
+        setTraceProgress(p => ({ ...p, current: p.current + 1, message: `Tracking backward... ${beforeTimes.length - 1 - i}/${beforeTimes.length - 1}` }))
       }
 
       const sorted = collected.sort((a, b) => a.time - b.time)
@@ -247,17 +302,17 @@ export function useClubPath() {
       setter(prev => ({ ...prev, points: final, color: pathColor, strokeWidth }))
 
       if (wasPlaying) video.play()
-
-      setTraceProgress({ current: FRAMES, total: FRAMES, status: 'done', message: `Done — ${final.length} points tracked` })
+      setTraceProgress({ current: TOTAL, total: TOTAL, status: 'done', message: `Done — ${final.length} points tracked` })
       setTimeout(() => setTraceProgress(p => ({ ...p, status: 'idle', message: '' })), 4000)
     },
     [pathColor, strokeWidth]
   )
 
   // ---------------------------------------------------------------------------
-  // AI trace (Claude vision, 24 frames)
+  // AI trace — Claude vision, 36 frames.
+  // Sends previous detection coordinate as context to bias the search.
   // ---------------------------------------------------------------------------
-  const aiTrace = useCallback(async (video: HTMLVideoElement, slot: 1 | 2, sampleCount = 24) => {
+  const aiTrace = useCallback(async (video: HTMLVideoElement, slot: 1 | 2, sampleCount = 36) => {
     if (!video || video.duration === 0) return
 
     const setter = slot === 1 ? setPath1 : setPath2
@@ -265,8 +320,8 @@ export function useClubPath() {
     const wasPlaying = !video.paused
     video.pause()
 
-    const start = duration * 0.05
-    const end = duration * 0.95
+    const start = duration * 0.04
+    const end = duration * 0.96
     const times = Array.from({ length: sampleCount }, (_, i) =>
       start + ((end - start) / (sampleCount - 1)) * i
     )
@@ -279,6 +334,7 @@ export function useClubPath() {
 
     const collected: ClubPathPoint[] = []
     setTraceProgress({ current: 0, total: sampleCount, status: 'running', message: 'AI detecting club head...' })
+    let lastDetected: { x: number; y: number } | null = null
 
     for (let i = 0; i < times.length; i++) {
       try {
@@ -286,14 +342,15 @@ export function useClubPath() {
         ctx.drawImage(video, 0, 0, W, H)
         const frame = stripDataUrlPrefix(canvas.toDataURL('image/jpeg', 0.82))
 
-        const res = await fetch('/api/golf-trace', {
+        const res: Response = await fetch('/api/golf-trace', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ frame, frameTime: times[i] }),
+          body: JSON.stringify({ frame, frameTime: times[i], hint: lastDetected }),
         })
-        const data = await res.json()
+        const data: { x: number | null; y: number | null; confidence: string } = await res.json()
 
         if (data.x !== null && data.y !== null && data.confidence !== 'none') {
           collected.push({ time: times[i], x: data.x, y: data.y })
+          lastDetected = { x: data.x, y: data.y }
           setter(prev => ({ ...prev, points: [...collected].sort((a, b) => a.time - b.time), color: pathColor, strokeWidth }))
         }
       } catch { /* skip */ }

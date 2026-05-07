@@ -3,13 +3,14 @@ import { NextRequest } from 'next/server'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const DETECT_PROMPT = `You are analyzing a golf swing video frame. Your ONLY task is to locate the golf club head.
+const buildPrompt = (hint: { x: number; y: number } | null) => `You are analyzing a golf swing video frame. Your ONLY task is to locate the golf club head.
 
 Look carefully for the club head - it is typically:
 - A small metallic/dark circular or rectangular shape at the end of the shaft
 - Often near the bottom of the frame during address/impact, higher during backswing/follow-through
-- May appear blurry/motion-blurred if the swing is fast
-- Could be a driver (large round head), iron (smaller blade), or wedge
+- May appear blurry/motion-blurred if the swing is fast — look for a blur streak, not just a sharp shape
+- Could be a driver (large round head), iron (smaller blade), or wedge${hint ? `
+- HINT: In the previous frame the club head was at approximately (${hint.x.toFixed(2)}, ${hint.y.toFixed(2)}) — check nearby first` : ''}
 
 Return ONLY a raw JSON object with NO markdown, no explanation, no code blocks:
 {"x": 0.XX, "y": 0.YY, "confidence": "high"|"medium"|"low"}
@@ -19,7 +20,7 @@ If you genuinely cannot find the club head, return: {"x": null, "y": null, "conf
 
 export async function POST(req: NextRequest) {
   try {
-    const { frame, frameTime } = await req.json() as { frame: string; frameTime: number }
+    const { frame, frameTime, hint } = await req.json() as { frame: string; frameTime: number; hint?: { x: number; y: number } | null }
 
     if (!frame) {
       return Response.json({ error: 'No frame provided' }, { status: 400 })
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
             },
             {
               type: 'text',
-              text: DETECT_PROMPT,
+              text: buildPrompt(hint ?? null),
             },
           ],
         },

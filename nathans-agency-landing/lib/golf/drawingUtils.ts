@@ -94,31 +94,46 @@ export function drawAnnotation(
     }
     case 'angle':
     case 'protractor': {
-      if (pts.length < 3) break
-      const [vertex, arm1, arm2] = pts
-      // Draw two arms
+      // Click order: arm1End → vertex (corner) → arm2End
+      if (pts.length < 2) break
+      const [arm1End, vertex, arm2End] = pts
+
+      // Draw first arm: arm1End → vertex
+      ctx.beginPath()
+      ctx.moveTo(arm1End[0], arm1End[1])
+      ctx.lineTo(vertex[0], vertex[1])
+      ctx.stroke()
+
+      if (!arm2End) break // preview: only first arm so far
+
+      // Draw second arm: vertex → arm2End
       ctx.beginPath()
       ctx.moveTo(vertex[0], vertex[1])
-      ctx.lineTo(arm1[0], arm1[1])
+      ctx.lineTo(arm2End[0], arm2End[1])
       ctx.stroke()
+
+      // Arc at vertex — always shows interior (smaller) angle
+      const a1 = Math.atan2(arm1End[1] - vertex[1], arm1End[0] - vertex[0])
+      const a2 = Math.atan2(arm2End[1] - vertex[1], arm2End[0] - vertex[0])
+      const arm1Len = Math.hypot(arm1End[0] - vertex[0], arm1End[1] - vertex[1])
+      const arm2Len = Math.hypot(arm2End[0] - vertex[0], arm2End[1] - vertex[1])
+      const arcR = Math.min(28, Math.min(arm1Len, arm2Len) * 0.35)
+
+      // Normalise angle difference to [0, 2π) so we can choose shorter sweep
+      let diff = ((a2 - a1) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
+      const ccw = diff > Math.PI // if diff > 180° the short way is counter-clockwise
       ctx.beginPath()
-      ctx.moveTo(vertex[0], vertex[1])
-      ctx.lineTo(arm2[0], arm2[1])
+      ctx.arc(vertex[0], vertex[1], arcR, a1, a2, ccw)
       ctx.stroke()
-      // Draw arc
-      const a1 = Math.atan2(arm1[1] - vertex[1], arm1[0] - vertex[0])
-      const a2 = Math.atan2(arm2[1] - vertex[1], arm2[0] - vertex[0])
-      const arcR = 30
-      ctx.beginPath()
-      ctx.arc(vertex[0], vertex[1], arcR, a1, a2, false)
-      ctx.stroke()
-      // Label the angle in degrees
-      const deg = Math.abs(((a2 - a1) * 180) / Math.PI)
+
+      // Degree label — use the shorter angle
+      const deg = ccw ? 360 - (diff * 180) / Math.PI : (diff * 180) / Math.PI
       const label = ann.label || `${deg.toFixed(1)}°`
-      const midAngle = (a1 + a2) / 2
-      const lx = vertex[0] + (arcR + 14) * Math.cos(midAngle)
-      const ly = vertex[1] + (arcR + 14) * Math.sin(midAngle)
-      ctx.font = `bold ${12 + ann.style.strokeWidth}px sans-serif`
+      // Place label halfway around the arc on the interior side
+      const midA = ccw ? a1 - diff / 2 : a1 + diff / 2
+      const lx = vertex[0] + (arcR + 14) * Math.cos(midA)
+      const ly = vertex[1] + (arcR + 14) * Math.sin(midA)
+      ctx.font = `bold ${11 + ann.style.strokeWidth}px sans-serif`
       ctx.fillStyle = ann.style.color
       ctx.globalAlpha = ann.style.opacity
       ctx.fillText(label, lx, ly)
