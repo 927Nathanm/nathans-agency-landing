@@ -22,7 +22,7 @@ export function stripDataUrlPrefix(dataUrl: string): string {
 }
 
 export async function detectFps(video: HTMLVideoElement): Promise<number> {
-  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return 30
+  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return 60
   return new Promise(resolve => {
     const times: number[] = []
     const cb = (_: number, meta: VideoFrameCallbackMetadata) => {

@@ -99,6 +99,7 @@ export function GolfAnalyzer() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         setHelpOpen(o => !o)
         e.preventDefault()
@@ -106,11 +107,29 @@ export function GolfAnalyzer() {
         setHelpOpen(false)
       } else if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey) {
         handleSnapshot()
+      } else if (e.key === ' ') {
+        sync.togglePlay()
+        e.preventDefault()
+      } else if (e.key === 'ArrowLeft') {
+        // shift = 10-frame jump, alt = exactly one frame, default = micro-step
+        sync.stepFrame(-1, e.shiftKey ? 20 : e.altKey ? 2 : 1)
+        e.preventDefault()
+      } else if (e.key === 'ArrowRight') {
+        sync.stepFrame(1, e.shiftKey ? 20 : e.altKey ? 2 : 1)
+        e.preventDefault()
+      } else if (e.key === 'a' || e.key === 'A') {
+        sync.setLoopPoint('a')
+      } else if (e.key === 'b' || e.key === 'B') {
+        sync.setLoopPoint('b')
+      } else if (e.key === 'l' || e.key === 'L') {
+        sync.clearLoop()
+      } else if (e.key === 'm' || e.key === 'M') {
+        sync.toggleMirror(1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [helpOpen, handleSnapshot])
+  }, [helpOpen, handleSnapshot, sync])
 
   const handleFileSelected = useCallback((file: File, slot: 1 | 2) => {
     if (!file.name) return

@@ -15,7 +15,7 @@ export function useVideoSync() {
   const [playbackRate, setPlaybackRateState] = useState(1)
   const [isMirrored, setIsMirrored] = useState<[boolean, boolean]>([false, false])
   const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null })
-  const [fps, setFps] = useState(30)
+  const [fps, setFps] = useState(60)
 
   const syncLoop = useCallback(() => {
     const v1 = videoRef1.current
@@ -71,12 +71,15 @@ export function useVideoSync() {
     setCurrentTime(clamped)
   }, [duration])
 
+  // Default to half-frame at min 60fps for micro-step granularity (~8ms).
+  // factor=1 → tiny micro-step, factor=2 → exactly one frame, factor=20 → ~10 frame jump.
   const stepFrame = useCallback(
-    (direction: 1 | -1) => {
-      const frameDuration = 1 / fps
-      seek(currentTime + direction * frameDuration)
+    (direction: 1 | -1, factor: number = 1) => {
+      const effectiveFps = Math.max(fps, 60)
+      const baseStep = 0.5 / effectiveFps // half-frame at the higher of detected fps or 60
+      seek(currentTime + direction * baseStep * factor)
     },
-    [fps, currentTime, seek]
+    [fps, currentTime, seek],
   )
 
   const setPlaybackRate = useCallback((rate: number) => {
