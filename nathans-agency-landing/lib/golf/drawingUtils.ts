@@ -131,26 +131,30 @@ export function drawAnnotation(
       ctx.stroke()
       ctx.restore()
 
-      // Degree label inside a small dark pill (matches Swing Profile style)
+      // Degree label inside a small dark pill (matches Swing Profile style).
+      // Place it on the *opposite* side of the angle from the arc — that way
+      // the label never overlaps the arms and always sits in a predictable spot
+      // (just outside the V, beyond the vertex).
       const deg = ccw ? 360 - (diff * 180) / Math.PI : (diff * 180) / Math.PI
       const label = ann.label || `${deg.toFixed(0)}°`
 
-      const midA = ccw ? a1 - diff / 2 : a1 + diff / 2
-      const labelDist = arcR + 22
-      const lx = vertex[0] + labelDist * Math.cos(midA)
-      const ly = vertex[1] + labelDist * Math.sin(midA)
+      const arcMidA = ccw ? a1 - diff / 2 : a1 + diff / 2
+      const labelA = arcMidA + Math.PI // 180° opposite the arc midpoint
+      const labelDist = 28
+      const lx = vertex[0] + labelDist * Math.cos(labelA)
+      const ly = vertex[1] + labelDist * Math.sin(labelA)
 
       ctx.save()
-      ctx.font = '600 14px ui-sans-serif, system-ui, -apple-system, sans-serif'
+      ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       const tw = ctx.measureText(label).width
-      const pillH = 22
-      const pillW = tw + 14
+      const pillH = 19
+      const pillW = tw + 11
       const px = lx - pillW / 2
       const py = ly - pillH / 2
-      const rr = 5
-      ctx.globalAlpha = 0.82
+      const rr = 4
+      ctx.globalAlpha = 0.88
       ctx.fillStyle = '#1a1a1a'
       ctx.beginPath()
       ctx.moveTo(px + rr, py)
@@ -205,28 +209,26 @@ export function drawInProgress(
   drawAnnotation(ctx, ann, canvasW, canvasH)
 }
 
-// Hollow-circle handles drawn over the control points of a selected annotation.
-// Same look as Swing Profile — white fill, colored ring, soft shadow.
+// Compact hollow-ring handles drawn over each control point of a selected
+// annotation. Matches the Swing Profile visual — small, transparent center,
+// crisp colored ring with subtle shadow.
 export function drawHandles(
   ctx: CanvasRenderingContext2D,
   ann: Annotation,
   canvasW: number,
   canvasH: number,
 ) {
-  const handleR = 8
+  const handleR = 5
   for (const p of ann.points) {
     const x = p.x * canvasW
     const y = p.y * canvasH
     ctx.save()
-    ctx.shadowBlur = 5
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
-    ctx.fillStyle = '#ffffff'
+    ctx.shadowBlur = 4
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+    ctx.strokeStyle = ann.style.color
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.arc(x, y, handleR, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.shadowBlur = 0
-    ctx.strokeStyle = ann.style.color
-    ctx.lineWidth = 2.5
     ctx.stroke()
     ctx.restore()
   }
