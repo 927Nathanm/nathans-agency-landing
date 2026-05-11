@@ -202,8 +202,6 @@ export function ClubPathOverlay({ pathData }: Props) {
       const dpr = window.devicePixelRatio || 1
       canvas.width = width * dpr
       canvas.height = height * dpr
-      canvas.style.width = `${width}px`
-      canvas.style.height = `${height}px`
     })
     obs.observe(canvas)
     return () => obs.disconnect()

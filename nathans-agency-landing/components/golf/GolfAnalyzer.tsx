@@ -18,7 +18,7 @@ import { useClubPath } from '@/hooks/golf/useClubPath'
 import { usePoseDetection } from '@/hooks/golf/usePoseDetection'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
-import { Layers, Columns2, Camera, HelpCircle, PersonStanding, Loader2 } from 'lucide-react'
+import { Layers, Columns2, Camera, HelpCircle, PersonStanding, Loader2, Link2, Link2Off, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 
@@ -57,17 +57,14 @@ export function GolfAnalyzer() {
 
   const ai = useAIAnalysis(sync.currentTime)
 
-  // Re-run pose detection whenever the visible frame changes on either video.
-  // Detection is throttled internally (one estimate at a time) so this stays
-  // responsive even during scrubbing or playback.
   useEffect(() => {
     if (pose1.enabled && pose1.ready) pose1.detect(sync.videoRef1.current)
   }, [sync.currentTime, pose1, video1Url])
+
   useEffect(() => {
     if (pose2.enabled && pose2.ready) pose2.detect(sync.videoRef2.current)
-  }, [sync.currentTime, pose2, video2Url])
+  }, [sync.currentTime2, pose2, video2Url])
 
-  // Auto-save annotations to localStorage so work persists across reloads
   const restoredRef = useRef(false)
   useEffect(() => {
     if (restoredRef.current) return
@@ -95,7 +92,6 @@ export function GolfAnalyzer() {
     return () => clearTimeout(t)
   }, [annotations.annotations1, annotations.annotations2])
 
-  // Download a PNG snapshot of the current frame with all annotations baked in
   const handleSnapshot = useCallback(() => {
     const video = sync.videoRef1.current
     const annCanvas = panel1Ref.current?.annotationCanvasRef.current
@@ -107,7 +103,6 @@ export function GolfAnalyzer() {
     a.click()
   }, [sync.videoRef1])
 
-  // Global keyboard shortcuts (top-level, not focus-dependent)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -124,7 +119,6 @@ export function GolfAnalyzer() {
         sync.togglePlay()
         e.preventDefault()
       } else if (e.key === 'ArrowLeft') {
-        // shift = 10-frame jump, alt = exactly one frame, default = micro-step
         sync.stepFrame(-1, e.shiftKey ? 20 : e.altKey ? 2 : 1)
         e.preventDefault()
       } else if (e.key === 'ArrowRight') {
@@ -158,7 +152,7 @@ export function GolfAnalyzer() {
       setVideo2Url(url)
       setMode('dual')
     }
-  }, [mode])
+  }, [])
 
   const handleAnnotationComplete = useCallback(
     (ann: Omit<Annotation, 'id' | 'source'>, slot: 1 | 2) => {
@@ -219,10 +213,11 @@ export function GolfAnalyzer() {
     ai.clearPendingAnnotations()
   }, [ai, annotations])
 
-  // When club path is tracking, disable drawing tool
   const effectiveDrawingState = clubPath.isTracking
     ? { ...drawing.drawingState, activeTool: 'select' as const }
     : drawing.drawingState
+
+  const isIndependent = sync.syncMode === 'independent'
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-white overflow-hidden">
@@ -232,33 +227,63 @@ export function GolfAnalyzer() {
           <span className="text-green-400 font-bold text-lg tracking-tight">⛳ SwingIQ</span>
           <span className="text-zinc-600 text-sm">AI Golf Analyzer</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {video1Url && video2Url && (
-            <div className="flex items-center gap-2">
+            <>
+              {/* Sync / Independent toggle */}
               <Button
                 size="sm"
-                variant={showOverlay ? 'secondary' : 'ghost'}
-                className={`h-8 gap-1.5 text-xs ${showOverlay ? 'bg-zinc-700 text-white' : 'text-zinc-400'}`}
-                onClick={() => setShowOverlay(v => !v)}
+                variant={isIndependent ? 'secondary' : 'ghost'}
+                className={`h-8 gap-1.5 text-xs ${isIndependent ? 'bg-blue-800/50 text-blue-200' : 'text-zinc-400 hover:text-white'}`}
+                onClick={sync.toggleSyncMode}
+                title={isIndependent ? 'Switch to sync mode (both videos play together)' : 'Switch to independent mode (control videos separately)'}
               >
-                <Layers className="h-3.5 w-3.5" />
-                Overlay
+                {isIndependent ? <Link2Off className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+                {isIndependent ? 'Independent' : 'Sync'}
               </Button>
-              {showOverlay && (
-                <div className="flex items-center gap-2 w-32">
-                  <Slider
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={[overlayOpacity]}
-                    onValueChange={([v]) => setOverlayOpacity(v)}
-                    className="flex-1"
-                  />
-                  <span className="text-xs text-zinc-400 w-8 text-right">{overlayOpacity}%</span>
-                </div>
+
+              {/* Re-sync button (independent mode only) */}
+              {isIndependent && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs text-amber-400 hover:text-amber-200"
+                  onClick={sync.syncV2ToV1}
+                  title="Snap V2 playhead to match V1"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Re-sync V2→V1
+                </Button>
               )}
-            </div>
+
+              {/* Overlay */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={showOverlay ? 'secondary' : 'ghost'}
+                  className={`h-8 gap-1.5 text-xs ${showOverlay ? 'bg-zinc-700 text-white' : 'text-zinc-400'}`}
+                  onClick={() => setShowOverlay(v => !v)}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  Overlay
+                </Button>
+                {showOverlay && (
+                  <div className="flex items-center gap-2 w-32">
+                    <Slider
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={[overlayOpacity]}
+                      onValueChange={([v]) => setOverlayOpacity(v)}
+                      className="flex-1"
+                    />
+                    <span className="text-xs text-zinc-400 w-8 text-right">{overlayOpacity}%</span>
+                  </div>
+                )}
+              </div>
+            </>
           )}
+
           <Button
             size="sm"
             variant="ghost"
@@ -268,6 +293,7 @@ export function GolfAnalyzer() {
             <Columns2 className="h-3.5 w-3.5" />
             {mode === 'dual' ? 'Single view' : 'Dual view'}
           </Button>
+
           {video1Url && (
             <Button
               size="sm"
@@ -275,7 +301,6 @@ export function GolfAnalyzer() {
               className={`h-8 gap-1.5 text-xs ${pose1.enabled ? 'bg-emerald-700/40 text-emerald-200' : 'text-zinc-400 hover:text-white'}`}
               onClick={pose1.toggle}
               disabled={pose1.loading}
-              title="Toggle AI pose-detection skeleton overlay (free, runs in your browser)"
             >
               {pose1.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PersonStanding className="h-3.5 w-3.5" />}
               Pose V1
@@ -288,7 +313,6 @@ export function GolfAnalyzer() {
               className={`h-8 gap-1.5 text-xs ${pose2.enabled ? 'bg-cyan-700/40 text-cyan-200' : 'text-zinc-400 hover:text-white'}`}
               onClick={pose2.toggle}
               disabled={pose2.loading}
-              title="Toggle AI pose-detection skeleton overlay on the reference"
             >
               {pose2.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PersonStanding className="h-3.5 w-3.5" />}
               Pose V2
@@ -300,7 +324,7 @@ export function GolfAnalyzer() {
               variant="ghost"
               className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
               onClick={handleSnapshot}
-              title="Download snapshot of current frame (S)"
+              title="Download snapshot (S)"
             >
               <Camera className="h-3.5 w-3.5" />
               Snapshot
@@ -311,7 +335,6 @@ export function GolfAnalyzer() {
             variant="ghost"
             className="h-8 gap-1.5 text-xs text-zinc-400 hover:text-white"
             onClick={() => setHelpOpen(true)}
-            title="Keyboard shortcuts (?)"
           >
             <HelpCircle className="h-3.5 w-3.5" />
             Help
@@ -352,6 +375,9 @@ export function GolfAnalyzer() {
                 onMoveAnnotation={handleMoveAnnotation}
                 poseKeypoints={pose1.keypoints}
                 label="Video 1 — Current Swing"
+                isIndependent={isIndependent}
+                isPlaying={sync.isPlaying}
+                onTogglePlay={sync.togglePlay}
               />
               {mode === 'dual' && (
                 <VideoPanel
@@ -361,7 +387,7 @@ export function GolfAnalyzer() {
                   objectUrl={video2Url}
                   isMirrored={sync.isMirrored[1]}
                   annotations={annotations.annotations2}
-                  currentTime={sync.currentTime}
+                  currentTime={isIndependent ? sync.currentTime2 : sync.currentTime}
                   drawingState={effectiveDrawingState}
                   isPersistent={drawing.drawingState.isPersistent}
                   clubPathActive={clubPath.isTracking}
@@ -381,17 +407,57 @@ export function GolfAnalyzer() {
                   onMoveAnnotation={handleMoveAnnotation}
                   poseKeypoints={pose2.keypoints}
                   label="Video 2 — Reference Swing"
+                  isIndependent={isIndependent}
+                  isPlaying={isIndependent ? sync.isPlaying2 : sync.isPlaying}
+                  onTogglePlay={isIndependent ? sync.togglePlay2 : sync.togglePlay}
                 />
               )}
             </div>
 
-            {/* Scrubber */}
-            <VideoScrubber
-              currentTime={sync.currentTime}
-              duration={sync.duration}
-              abLoop={sync.abLoop}
-              onSeek={sync.seek}
-            />
+            {/* Scrubbers — one shared in sync mode, two independent scrubbers otherwise */}
+            {isIndependent && mode === 'dual' ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-zinc-900 rounded-lg border border-zinc-800 px-2 py-1.5">
+                  <VideoScrubber
+                    currentTime={sync.currentTime}
+                    duration={sync.duration}
+                    abLoop={sync.abLoop}
+                    onSeek={sync.seek}
+                    label="V1"
+                    isPlaying={sync.isPlaying}
+                    onTogglePlay={sync.togglePlay}
+                    onStepFrame={sync.stepFrame}
+                    crop={sync.crop1}
+                    onSetCrop={sync.setCropPoint1}
+                    onClearCrop={sync.clearCrop1}
+                  />
+                </div>
+                <div className="bg-zinc-900 rounded-lg border border-zinc-800 px-2 py-1.5">
+                  <VideoScrubber
+                    currentTime={sync.currentTime2}
+                    duration={sync.duration2 || sync.duration}
+                    onSeek={sync.seek2}
+                    label="V2"
+                    isPlaying={sync.isPlaying2}
+                    onTogglePlay={sync.togglePlay2}
+                    onStepFrame={sync.stepFrame2}
+                    crop={sync.crop2}
+                    onSetCrop={sync.setCropPoint2}
+                    onClearCrop={sync.clearCrop2}
+                  />
+                </div>
+              </div>
+            ) : (
+              <VideoScrubber
+                currentTime={sync.currentTime}
+                duration={sync.duration}
+                abLoop={sync.abLoop}
+                onSeek={sync.seek}
+                crop={sync.crop1}
+                onSetCrop={sync.setCropPoint1}
+                onClearCrop={sync.clearCrop1}
+              />
+            )}
 
             {/* Playback controls */}
             <VideoControls

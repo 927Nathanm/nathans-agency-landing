@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
+import { Play, Pause } from 'lucide-react'
 import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
@@ -40,6 +41,10 @@ interface Props {
   onMoveAnnotation: (id: string, slot: 1 | 2, dx: number, dy: number) => void
   poseKeypoints?: Keypoint[]
   label: string
+  // Independent mode: clicking the video toggles play/pause for this slot
+  isIndependent?: boolean
+  isPlaying?: boolean
+  onTogglePlay?: () => void
 }
 
 export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
@@ -70,6 +75,9 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
       onMoveAnnotation,
       poseKeypoints,
       label,
+      isIndependent,
+      isPlaying,
+      onTogglePlay,
     },
     ref
   ) => {
@@ -77,6 +85,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
     const containerRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [videoAspect, setVideoAspect] = useState<number | null>(null)
+    const [hoveringVideo, setHoveringVideo] = useState(false)
 
     useImperativeHandle(ref, () => ({
       annotationCanvasRef,
@@ -214,6 +223,22 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 selectedId={selectedAnnotationId}
               />
               <ClubPathOverlay pathData={clubPathData} />
+              {/* Independent-mode click-to-play/pause overlay */}
+              {isIndependent && onTogglePlay && !isActiveSlot && !clubPathActive && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center group"
+                  style={{ zIndex: 5, cursor: 'pointer' }}
+                  onMouseEnter={() => setHoveringVideo(true)}
+                  onMouseLeave={() => setHoveringVideo(false)}
+                  onClick={onTogglePlay}
+                >
+                  <div className={`rounded-full bg-black/50 p-3 transition-opacity ${hoveringVideo ? 'opacity-80' : 'opacity-0'}`}>
+                    {isPlaying
+                      ? <Pause className="h-8 w-8 text-white" />
+                      : <Play className="h-8 w-8 text-white" />}
+                  </div>
+                </div>
+              )}
               {poseKeypoints && poseKeypoints.length > 0 && (
                 <PoseOverlay keypoints={poseKeypoints} color={slot === 1 ? '#00ff88' : '#00cfff'} />
               )}

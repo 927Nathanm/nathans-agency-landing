@@ -73,8 +73,6 @@ export function PoseOverlay({ keypoints, color = '#00ff88', minScore = 0.3 }: Pr
       const dpr = window.devicePixelRatio || 1
       canvas.width = width * dpr
       canvas.height = height * dpr
-      canvas.style.width = `${width}px`
-      canvas.style.height = `${height}px`
     })
     obs.observe(canvas)
     return () => obs.disconnect()
