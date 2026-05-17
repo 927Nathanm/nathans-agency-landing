@@ -214,14 +214,14 @@ export function GolfAnalyzer() {
       const frames = withFrames ? captureFrames(video2Url ? [1, 2] : [1]) : {}
       await ai.sendMessage(text, frames)
     },
-    [captureFrames, video2Url, ai]
+    [captureFrames, video2Url]
   )
 
   const handleApplyAnnotations = useCallback(() => {
     if (ai.pendingAnnotations.length === 0) return
     annotations.addAIAnnotations(ai.pendingAnnotations, 1)
     ai.clearPendingAnnotations()
-  }, [ai, annotations])
+  }, [])
 
   const effectiveDrawingState = clubPath.isTracking
     ? { ...drawing.drawingState, activeTool: 'select' as const }
