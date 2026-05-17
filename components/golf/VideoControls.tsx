@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-const SPEEDS = [0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+const SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0]
 
 interface CropRange { start: number; end: number | null }
 
