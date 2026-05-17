@@ -37,25 +37,33 @@ export function usePoseDetection() {
     setLoading(true)
     ;(async () => {
       try {
+        console.log('[pose] Initializing TensorFlow and MoveNet...')
         // Import the full tfjs bundle (includes backends)
         const tf = await import('@tensorflow/tfjs')
-        await tf.setBackend('webgl').catch(() => tf.setBackend('cpu'))
+        console.log('[pose] TensorFlow imported, setting backend...')
+        await tf.setBackend('webgl').catch(() => {
+          console.warn('[pose] WebGL backend failed, falling back to CPU')
+          return tf.setBackend('cpu')
+        })
         await tf.ready()
+        console.log('[pose] TensorFlow backend ready')
 
         // Import pose-detection using namespace import to avoid named-export issues
         const pd = await import('@tensorflow-models/pose-detection')
+        console.log('[pose] Pose-detection module imported')
 
         const detector = await pd.createDetector(
           pd.SupportedModels.MoveNet,
           { modelType: (pd as any).movenet.modelType.SINGLEPOSE_LIGHTNING },
         )
+        console.log('[pose] MoveNet detector created successfully')
 
         if (!cancelled) {
           detectorRef.current = detector as unknown as Detector
           setReady(true)
         }
       } catch (err) {
-        console.error('[pose] load failed', err)
+        console.error('[pose] Initialization failed', err)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -65,9 +73,15 @@ export function usePoseDetection() {
 
   const detect = useCallback(async (video: HTMLVideoElement | null) => {
     if (!enabled || !ready || !video || inflightRef.current) return
-    if (video.videoWidth === 0 || video.videoHeight === 0) return
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.debug('[pose] Video not ready: width or height is 0')
+      return
+    }
     const det = detectorRef.current
-    if (!det) return
+    if (!det) {
+      console.debug('[pose] Detector not ready')
+      return
+    }
     inflightRef.current = true
     try {
       const poses = await det.estimatePoses(video)
@@ -75,19 +89,18 @@ export function usePoseDetection() {
       if (first) {
         const w = video.videoWidth
         const h = video.videoHeight
-        setKeypoints(
-          first.keypoints.map(k => ({
-            x: k.x / w,
-            y: k.y / h,
-            score: k.score ?? 0,
-            name: k.name,
-          })),
-        )
+        const kpts = first.keypoints.map(k => ({
+          x: k.x / w,
+          y: k.y / h,
+          score: k.score ?? 0,
+          name: k.name,
+        }))
+        setKeypoints(kpts)
       } else {
         setKeypoints([])
       }
     } catch (err) {
-      console.error('[pose] detect error', err)
+      console.error('[pose] Detection error', err)
     } finally {
       inflightRef.current = false
     }

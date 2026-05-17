@@ -58,12 +58,16 @@ export function GolfAnalyzer() {
   const ai = useAIAnalysis(sync.currentTime)
 
   useEffect(() => {
-    if (pose1.enabled && pose1.ready) pose1.detect(sync.videoRef1.current)
-  }, [sync.currentTime, pose1.enabled, pose1.ready, pose1.detect])
+    if (pose1.enabled && pose1.ready) {
+      pose1.detect(sync.videoRef1.current)
+    }
+  }, [sync.currentTime, pose1])
 
   useEffect(() => {
-    if (pose2.enabled && pose2.ready) pose2.detect(sync.videoRef2.current)
-  }, [sync.currentTime2, pose2.enabled, pose2.ready, pose2.detect])
+    if (pose2.enabled && pose2.ready) {
+      pose2.detect(sync.videoRef2.current)
+    }
+  }, [sync.currentTime2, pose2])
 
   const restoredRef = useRef(false)
   useEffect(() => {
