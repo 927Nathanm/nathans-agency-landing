@@ -60,11 +60,11 @@ export function GolfAnalyzer() {
 
   useEffect(() => {
     if (pose1.enabled && pose1.ready) pose1.detect(sync.videoRef1.current)
-  }, [sync.currentTime, pose1, video1Url])
+  }, [sync.currentTime, pose1.enabled, pose1.ready, video1Url])
 
   useEffect(() => {
     if (pose2.enabled && pose2.ready) pose2.detect(sync.videoRef2.current)
-  }, [sync.currentTime2, pose2, video2Url])
+  }, [sync.currentTime2, pose2.enabled, pose2.ready, video2Url])
 
   const restoredRef = useRef(false)
   useEffect(() => {
