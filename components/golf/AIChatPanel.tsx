@@ -180,7 +180,7 @@ export function AIChatPanel({
               variant="ghost"
               className={`h-8 w-8 ${withFrames ? 'text-green-400' : 'text-zinc-600'}`}
               onClick={() => setWithFrames(v => !v)}
-              title={withFrames ? 'Frame capture ON' : 'Frame capture OFF'}
+              title={withFrames ? 'Swing data attached (pose measurements)' : 'No swing data attached'}
               disabled={!hasVideo1 && !hasVideo2}
             >
               {withFrames ? <Camera className="h-4 w-4" /> : <CameraOff className="h-4 w-4" />}
@@ -196,7 +196,7 @@ export function AIChatPanel({
           </div>
         </div>
         <p className="mt-1 text-xs text-zinc-600">
-          {withFrames ? 'Current frame will be sent with your message' : 'Text only — no frame capture'}
+          {withFrames ? 'Pose swing data will be attached (enable Pose V1/V2 to record)' : 'Text only — no swing data attached'}
           {' · '}Enter to send
         </p>
       </div>

@@ -12,7 +12,6 @@ import { HelpModal } from './HelpModal'
 import { useVideoSync } from '@/hooks/golf/useVideoSync'
 import { useDrawing } from '@/hooks/golf/useDrawing'
 import { useAnnotations } from '@/hooks/golf/useAnnotations'
-import { useFrameCapture } from '@/hooks/golf/useFrameCapture'
 import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
 import { useClubPath } from '@/hooks/golf/useClubPath'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
@@ -44,15 +43,6 @@ export function GolfAnalyzer() {
   const drawing = useDrawing()
   const annotations = useAnnotations()
   const clubPath = useClubPath()
-  const annotationCanvas1 = panel1Ref.current?.annotationCanvasRef ?? { current: null }
-  const annotationCanvas2 = panel2Ref.current?.annotationCanvasRef ?? { current: null }
-
-  const { captureFrames } = useFrameCapture(
-    sync.videoRef1,
-    sync.videoRef2,
-    annotationCanvas1,
-    annotationCanvas2
-  )
 
   const ai = useAIAnalysis(sync.currentTime)
 
@@ -159,6 +149,7 @@ export function GolfAnalyzer() {
       const url = URL.createObjectURL(file)
       urlRef1.current = url
       setVideo1Url(url)
+      pose1.clearMeasurements()
     } else {
       if (urlRef2.current) URL.revokeObjectURL(urlRef2.current)
       const url = URL.createObjectURL(file)
@@ -166,8 +157,9 @@ export function GolfAnalyzer() {
       setVideo2Url(url)
       setMode('dual')
       drawing.setTargetVideo('both')
+      pose2.clearMeasurements()
     }
-  }, [drawing])
+  }, [drawing, pose1.clearMeasurements, pose2.clearMeasurements])
 
   const handleAnnotationComplete = useCallback(
     (ann: Omit<Annotation, 'id' | 'source'>, slot: 1 | 2) => {
@@ -215,11 +207,21 @@ export function GolfAnalyzer() {
   )
 
   const handleSendMessage = useCallback(
-    async (text: string, withFrames: boolean) => {
-      const frames = withFrames ? captureFrames(video2Url ? [1, 2] : [1]) : {}
-      await ai.sendMessage(text, frames)
+    async (text: string, includeSwingData: boolean) => {
+      if (!includeSwingData) {
+        await ai.sendMessage(text)
+        return
+      }
+      const measurements1 = pose1.getMeasurements()
+      const measurements2 = video2Url ? pose2.getMeasurements() : []
+      await ai.sendMessage(text, {
+        measurements1,
+        measurements2,
+        fps: sync.fps,
+        cameraAngle: 'unknown',
+      })
     },
-    [captureFrames, video2Url, ai.sendMessage]
+    [video2Url, ai.sendMessage, pose1.getMeasurements, pose2.getMeasurements, sync.fps]
   )
 
   const handleApplyAnnotations = useCallback(() => {

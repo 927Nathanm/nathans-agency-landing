@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { computeMeasurements, type FrameMeasurements } from '@/lib/golf/poseMeasurements'
 
 export type Keypoint = {
   x: number       // normalized 0..1
@@ -71,6 +72,11 @@ export function usePoseDetection() {
 
   const poseRef = useRef<PoseInstance | null>(null)
   const inflightRef = useRef(false)
+  // Time series of derived measurements — kept in a ref so per-frame samples
+  // don't trigger React re-renders. Drained via getMeasurements().
+  const seriesRef = useRef<FrameMeasurements[]>([])
+  const lastSampledTimeRef = useRef<number>(-1)
+  const lastVideoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     if (!enabled || poseRef.current) return
@@ -98,13 +104,25 @@ export function usePoseDetection() {
           if (cancelled) return
           const lms = results.poseLandmarks
           if (lms) {
-            setKeypoints(
-              lms.map(lm => ({
-                x: lm.x,
-                y: lm.y,
-                score: lm.visibility ?? 1,
-              }))
-            )
+            const kps: Keypoint[] = lms.map(lm => ({
+              x: lm.x,
+              y: lm.y,
+              score: lm.visibility ?? 1,
+            }))
+            setKeypoints(kps)
+
+            // Record a measurement sample tied to the current video time,
+            // de-duplicating on time so paused video doesn't pile up samples.
+            const v = lastVideoRef.current
+            if (v && v.currentTime !== lastSampledTimeRef.current) {
+              const m = computeMeasurements(kps, v.currentTime)
+              seriesRef.current.push(m)
+              lastSampledTimeRef.current = v.currentTime
+              // Cap memory at ~10s of dense sampling
+              if (seriesRef.current.length > 1200) {
+                seriesRef.current.splice(0, seriesRef.current.length - 1200)
+              }
+            }
           } else {
             setKeypoints([])
           }
@@ -133,6 +151,8 @@ export function usePoseDetection() {
     const p = poseRef.current
     if (!p) return
     inflightRef.current = true
+    // onResults reads video.currentTime via this ref to tag samples
+    lastVideoRef.current = video
     try {
       await p.send({ image: video })
     } catch (err) {
@@ -142,6 +162,15 @@ export function usePoseDetection() {
     }
   }, [enabled, ready])
 
+  const getMeasurements = useCallback((): FrameMeasurements[] => {
+    return seriesRef.current.slice()
+  }, [])
+
+  const clearMeasurements = useCallback(() => {
+    seriesRef.current = []
+    lastSampledTimeRef.current = -1
+  }, [])
+
   const toggle = useCallback(() => {
     setEnabled(e => {
       if (e) {
@@ -149,10 +178,12 @@ export function usePoseDetection() {
         setReady(false)
         poseRef.current?.close()
         poseRef.current = null
+        // Keep measurements when toggling off — user may still want to analyze
+        // what was already captured. Explicit clear via clearMeasurements().
       }
       return !e
     })
   }, [])
 
-  return { enabled, ready, loading, keypoints, detect, toggle }
+  return { enabled, ready, loading, keypoints, detect, toggle, getMeasurements, clearMeasurements }
 }

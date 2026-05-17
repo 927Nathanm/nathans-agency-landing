@@ -2,6 +2,18 @@
 
 import { useState, useCallback } from 'react'
 import type { AIState, ChatMessage, Annotation, AIAnnotationSuggestion } from '@/lib/golf/annotationTypes'
+import type { FrameMeasurements } from '@/lib/golf/poseMeasurements'
+
+export interface AnalysisContext {
+  /** Pose-derived measurement time series for video 1 */
+  measurements1?: FrameMeasurements[]
+  /** Pose-derived measurement time series for video 2 (reference swing) */
+  measurements2?: FrameMeasurements[]
+  /** Frames per second of the source video, when known */
+  fps?: number
+  /** Camera angle, if user has selected one */
+  cameraAngle?: 'face-on' | 'down-the-line' | 'behind' | 'unknown'
+}
 
 function parseAnnotations(text: string, currentTime: number): Annotation[] {
   const match = text.match(/```annotations\n([\s\S]*?)\n```/)
@@ -42,14 +54,14 @@ export function useAIAnalysis(currentTime: number) {
   const sendMessage = useCallback(
     async (
       text: string,
-      frames?: { frame1?: string; frame2?: string }
+      ctx?: AnalysisContext,
     ) => {
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'user',
         content: text,
         timestamp: new Date(),
-        hasFrames: !!(frames?.frame1 || frames?.frame2),
+        hasFrames: !!(ctx?.measurements1?.length || ctx?.measurements2?.length),
       }
 
       setState(s => ({
@@ -74,9 +86,13 @@ export function useAIAnalysis(currentTime: number) {
             role: m.role,
             content: m.content,
           })),
-          frame1: frames?.frame1,
-          frame2: frames?.frame2,
-          frameTime: currentTime,
+          context: {
+            currentTime,
+            fps: ctx?.fps,
+            cameraAngle: ctx?.cameraAngle ?? 'unknown',
+            measurements1: ctx?.measurements1 ?? [],
+            measurements2: ctx?.measurements2 ?? [],
+          },
         }
 
         const res = await fetch('/api/golf-analysis', {
