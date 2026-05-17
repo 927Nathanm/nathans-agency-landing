@@ -86,7 +86,7 @@ export function usePoseDetection() {
       }
     })()
     return () => { cancelled = true }
-  }, [enabled, loading])
+  }, [enabled])
 
   const detect = useCallback(async (video: HTMLVideoElement | null) => {
     if (!enabled || !ready || !video || inflightRef.current) return
