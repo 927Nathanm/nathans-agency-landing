@@ -32,7 +32,7 @@ export function usePoseDetection() {
   const inflightRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled || detectorRef.current || loading) return
+    if (!enabled || detectorRef.current) return
     let cancelled = false
     setLoading(true)
     ;(async () => {
@@ -61,7 +61,7 @@ export function usePoseDetection() {
       }
     })()
     return () => { cancelled = true }
-  }, [enabled, loading])
+  }, [enabled])
 
   const detect = useCallback(async (video: HTMLVideoElement | null) => {
     if (!enabled || !ready || !video || inflightRef.current) return

@@ -47,7 +47,7 @@ export function useVideoSync() {
   const syncLoopFnRef = useRef<() => void>(() => {})
   const syncLoop2FnRef = useRef<() => void>(() => {})
 
-  // Update syncLoop function every render so it closes over latest state
+  // Update syncLoop function only when needed to close over latest state
   // The running RAF calls syncLoopFnRef.current so it always picks up fresh logic
   useEffect(() => {
     syncLoopFnRef.current = () => {
@@ -84,7 +84,7 @@ export function useVideoSync() {
       setCurrentTime(v1.currentTime)
       rafRef.current = requestAnimationFrame(syncLoopFnRef.current)
     }
-  })
+  }, [])
 
   useEffect(() => {
     syncLoop2FnRef.current = () => {
@@ -105,7 +105,7 @@ export function useVideoSync() {
       setCurrentTime2(v2.currentTime)
       raf2Ref.current = requestAnimationFrame(syncLoop2FnRef.current)
     }
-  })
+  }, [])
 
   const play = useCallback(() => {
     const v1 = videoRef1.current
