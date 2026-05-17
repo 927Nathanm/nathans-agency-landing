@@ -31,6 +31,7 @@ export function GolfAnalyzer() {
   const [showOverlay, setShowOverlay] = useState(false)
   const [mode, setMode] = useState<'dual' | 'single'>('dual')
   const [helpOpen, setHelpOpen] = useState(false)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const urlRef1 = useRef<string | null>(null)
   const urlRef2 = useRef<string | null>(null)
@@ -138,6 +139,12 @@ export function GolfAnalyzer() {
     return () => window.removeEventListener('keydown', onKey)
   }, [helpOpen, handleSnapshot, sync])
 
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [])
+
   const handleFileSelected = useCallback((file: File, slot: 1 | 2) => {
     if (!file.name) return
     if (slot === 1) {
@@ -146,11 +153,14 @@ export function GolfAnalyzer() {
       urlRef1.current = url
       setVideo1Url(url)
     } else {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
       if (urlRef2.current) URL.revokeObjectURL(urlRef2.current)
       const url = URL.createObjectURL(file)
       urlRef2.current = url
-      setVideo2Url(url)
-      setMode('dual')
+      debounceTimerRef.current = setTimeout(() => {
+        setVideo2Url(url)
+        setMode('dual')
+      }, 50)
     }
   }, [])
 
