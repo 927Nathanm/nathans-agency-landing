@@ -159,6 +159,11 @@ Answer these and I can pinpoint your likely fault:
 
 The relationship between your answers reveals the underlying pattern. A slicer who hits it high is doing something very different from a slicer who hits it low.`,
   ],
+
+  takeaway: [
+    `**Takeaway Analysis (P1 → P2)**
+
+**Club Head Path:**
 The club head should track along the target line — not inside it, not outside it. A common error is pulling the club immediately inside, which forces an over-the-top move on the way down.
 
 **Club Face at P2 (Hip High):**
