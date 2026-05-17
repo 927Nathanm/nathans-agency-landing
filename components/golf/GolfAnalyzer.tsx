@@ -461,6 +461,8 @@ export function GolfAnalyzer() {
               playbackRate={sync.playbackRate}
               isMirrored={sync.isMirrored}
               abLoop={sync.abLoop}
+              crop1={sync.crop1}
+              crop2={sync.crop2}
               hasVideo1={!!video1Url}
               hasVideo2={!!video2Url}
               onTogglePlay={sync.togglePlay}
@@ -469,6 +471,14 @@ export function GolfAnalyzer() {
               onToggleMirror={sync.toggleMirror}
               onSetLoopPoint={sync.setLoopPoint}
               onClearLoop={sync.clearLoop}
+              onSetCropPoint={(slot, point, time) => {
+                if (slot === 1) sync.setCropPoint1(point, time)
+                else sync.setCropPoint2(point, time)
+              }}
+              onClearCrop={(slot) => {
+                if (slot === 1) sync.clearCrop1()
+                else sync.clearCrop2()
+              }}
             />
 
             {/* Club path tracker */}

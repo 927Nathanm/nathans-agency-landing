@@ -143,9 +143,6 @@ export function VideoScrubber({
           {loopAPct !== null && (
             <div className="absolute h-4 w-0.5 bg-green-400 rounded pointer-events-none" style={{ left: `${loopAPct}%` }} />
           )}
-          {loopBPct !== null && (
-            <div className="absolute h-4 w-0.5 bg-yellow-400 rounded pointer-events-none" style={{ left: `${loopBPct}%` }} />
-          )}
 
           {/* Hover time tooltip */}
           {hovering && hoverTime !== null && (

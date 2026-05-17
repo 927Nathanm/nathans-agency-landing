@@ -215,14 +215,14 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
         {/* Outer wrapper centers the inner video container which is sized to
             match the loaded video's aspect ratio — eliminates stretched/squished
             panels regardless of orientation. */}
-        <div className="flex-1 min-h-0 flex items-center justify-center">
+        <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
         <div
           ref={containerRef}
-          className="relative overflow-hidden rounded-lg bg-black"
+          className="relative rounded-lg bg-black"
           style={
             objectUrl && videoAspect
-              ? { aspectRatio: String(videoAspect), height: '100%', maxWidth: '100%' }
-              : { width: '100%', height: '100%' }
+              ? { aspectRatio: String(videoAspect), height: '100%', maxWidth: '100%', overflow: 'hidden' }
+              : { width: '100%', height: '100%', overflow: 'hidden' }
           }
         >
           {!objectUrl ? (
