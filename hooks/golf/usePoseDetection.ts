@@ -3,23 +3,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type Keypoint = {
-  x: number       // normalized 0..1 (relative to video frame)
+  x: number       // normalized 0..1
   y: number
   score: number
   name?: string
 }
 
+// BlazePose 33-landmark skeleton — golf-relevant connections
 export const POSE_EDGES: [number, number][] = [
-  [0, 1], [0, 2], [1, 3], [2, 4],
-  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-  [5, 11], [6, 12], [11, 12],
-  [11, 13], [13, 15], [12, 14], [14, 16],
+  // Torso
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  // Left arm
+  [11, 13], [13, 15], [15, 17], [15, 19],
+  // Right arm
+  [12, 14], [14, 16], [16, 18], [16, 20],
+  // Left leg
+  [23, 25], [25, 27], [27, 29], [27, 31],
+  // Right leg
+  [24, 26], [26, 28], [28, 30], [28, 32],
 ]
 
-type Detector = {
-  estimatePoses: (input: HTMLVideoElement) => Promise<Array<{
-    keypoints: Array<{ x: number; y: number; score?: number; name?: string }>
-  }>>
+type PoseInstance = {
+  setOptions: (opts: object) => void
+  onResults: (cb: (results: { poseLandmarks?: Array<{ x: number; y: number; z: number; visibility?: number }> }) => void) => void
+  initialize: () => Promise<void>
+  send: (inputs: { image: HTMLVideoElement }) => Promise<void>
+  close: () => void
 }
 
 export function usePoseDetection() {
@@ -28,39 +37,49 @@ export function usePoseDetection() {
   const [loading, setLoading] = useState(false)
   const [keypoints, setKeypoints] = useState<Keypoint[]>([])
 
-  const detectorRef = useRef<Detector | null>(null)
+  const poseRef = useRef<PoseInstance | null>(null)
   const inflightRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled || detectorRef.current) return
+    if (!enabled || poseRef.current) return
     let cancelled = false
     setLoading(true)
     ;(async () => {
       try {
-        // Pose detection temporarily disabled due to TensorFlow bundling issues
-        // This will be re-enabled once TensorFlow is properly configured for browser usage
-        console.log('Pose detection is currently disabled')
+        const { Pose } = await import('@mediapipe/pose')
+
+        const pose = new Pose({
+          locateFile: (file: string) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`,
+        }) as unknown as PoseInstance
+
+        pose.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        })
+
+        pose.onResults((results) => {
+          if (cancelled) return
+          const lms = results.poseLandmarks
+          if (lms) {
+            setKeypoints(
+              lms.map(lm => ({
+                x: lm.x,
+                y: lm.y,
+                score: lm.visibility ?? 1,
+              }))
+            )
+          } else {
+            setKeypoints([])
+          }
+        })
+
+        await pose.initialize()
+
         if (!cancelled) {
-          setReady(false)
-          setLoading(false)
-        }
-        return
-
-        // Import the full tfjs bundle (includes backends)
-        const tf = await import('@tensorflow/tfjs')
-        await tf.setBackend('webgl').catch(() => tf.setBackend('cpu'))
-        await tf.ready()
-
-        // Import pose-detection using namespace import to avoid named-export issues
-        const pd = await import('@tensorflow-models/pose-detection')
-
-        const detector = await pd.createDetector(
-          pd.SupportedModels.MoveNet,
-          { modelType: (pd as any).movenet.modelType.SINGLEPOSE_LIGHTNING },
-        )
-
-        if (!cancelled) {
-          detectorRef.current = detector as unknown as Detector
+          poseRef.current = pose as unknown as PoseInstance
           setReady(true)
         }
       } catch (err) {
@@ -69,32 +88,19 @@ export function usePoseDetection() {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [enabled])
 
   const detect = useCallback(async (video: HTMLVideoElement | null) => {
     if (!enabled || !ready || !video || inflightRef.current) return
     if (video.videoWidth === 0 || video.videoHeight === 0) return
-    const det = detectorRef.current
-    if (!det) return
+    const p = poseRef.current
+    if (!p) return
     inflightRef.current = true
     try {
-      const poses = await det.estimatePoses(video)
-      const first = poses[0]
-      if (first) {
-        const w = video.videoWidth
-        const h = video.videoHeight
-        setKeypoints(
-          first.keypoints.map(k => ({
-            x: k.x / w,
-            y: k.y / h,
-            score: k.score ?? 0,
-            name: k.name,
-          })),
-        )
-      } else {
-        setKeypoints([])
-      }
+      await p.send({ image: video })
     } catch (err) {
       console.error('[pose] detect error', err)
     } finally {
@@ -104,7 +110,12 @@ export function usePoseDetection() {
 
   const toggle = useCallback(() => {
     setEnabled(e => {
-      if (e) setKeypoints([])
+      if (e) {
+        setKeypoints([])
+        setReady(false)
+        poseRef.current?.close()
+        poseRef.current = null
+      }
       return !e
     })
   }, [])

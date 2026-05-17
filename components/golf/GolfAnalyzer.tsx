@@ -17,7 +17,8 @@ import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
 import { useClubPath } from '@/hooks/golf/useClubPath'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
-import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw, PersonStanding } from 'lucide-react'
+import { usePoseDetection } from '@/hooks/golf/usePoseDetection'
+import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw, PersonStanding, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 
@@ -38,6 +39,8 @@ export function GolfAnalyzer() {
   const panel2Ref = useRef<VideoPanelHandle>(null)
 
   const sync = useVideoSync()
+  const pose1 = usePoseDetection()
+  const pose2 = usePoseDetection()
   const drawing = useDrawing()
   const annotations = useAnnotations()
   const clubPath = useClubPath()
@@ -125,6 +128,29 @@ export function GolfAnalyzer() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [helpOpen, handleSnapshot, sync])
+
+  // Pose detection loops — run at ~10 fps so detection doesn't block playback
+  useEffect(() => {
+    if (!pose1.enabled) return
+    let rafId: number
+    const loop = () => {
+      pose1.detect(sync.videoRef1.current)
+      rafId = requestAnimationFrame(loop)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [pose1.enabled, pose1.detect, sync.videoRef1])
+
+  useEffect(() => {
+    if (!pose2.enabled) return
+    let rafId: number
+    const loop = () => {
+      pose2.detect(sync.videoRef2.current)
+      rafId = requestAnimationFrame(loop)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [pose2.enabled, pose2.detect, sync.videoRef2])
 
   const handleFileSelected = useCallback((file: File, slot: 1 | 2) => {
     if (!file.name) return
@@ -286,24 +312,28 @@ export function GolfAnalyzer() {
           {video1Url && (
             <Button
               size="sm"
-              disabled
-              variant="ghost"
-              className="h-8 gap-1.5 text-xs text-zinc-500 opacity-50 cursor-not-allowed"
-              title="Pose detection coming soon"
+              variant={pose1.enabled ? 'secondary' : 'ghost'}
+              className={`h-8 gap-1.5 text-xs ${pose1.enabled ? 'bg-green-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+              onClick={pose1.toggle}
+              title="Toggle pose skeleton on Video 1"
             >
-              <PersonStanding className="h-3.5 w-3.5" />
+              {pose1.loading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <PersonStanding className="h-3.5 w-3.5" />}
               Pose V1
             </Button>
           )}
           {video1Url && video2Url && (
             <Button
               size="sm"
-              disabled
-              variant="ghost"
-              className="h-8 gap-1.5 text-xs text-zinc-500 opacity-50 cursor-not-allowed"
-              title="Pose detection coming soon"
+              variant={pose2.enabled ? 'secondary' : 'ghost'}
+              className={`h-8 gap-1.5 text-xs ${pose2.enabled ? 'bg-green-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+              onClick={pose2.toggle}
+              title="Toggle pose skeleton on Video 2"
             >
-              <PersonStanding className="h-3.5 w-3.5" />
+              {pose2.loading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <PersonStanding className="h-3.5 w-3.5" />}
               Pose V2
             </Button>
           )}
@@ -362,6 +392,7 @@ export function GolfAnalyzer() {
                 onSelectAnnotation={handleSelectAnnotation}
                 onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
                 onMoveAnnotation={handleMoveAnnotation}
+                poseKeypoints={pose1.keypoints}
                 label="Video 1 — Current Swing"
                 isIndependent={isIndependent}
                 isPlaying={sync.isPlaying}
@@ -393,6 +424,7 @@ export function GolfAnalyzer() {
                   onSelectAnnotation={handleSelectAnnotation}
                   onUpdateAnnotationPoint={handleUpdateAnnotationPoint}
                   onMoveAnnotation={handleMoveAnnotation}
+                  poseKeypoints={pose2.keypoints}
                   label="Video 2 — Reference Swing"
                   isIndependent={isIndependent}
                   isPlaying={isIndependent ? sync.isPlaying2 : sync.isPlaying}
