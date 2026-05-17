@@ -32,67 +32,80 @@ export function usePoseDetection() {
   const inflightRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled || detectorRef.current || loading) return
+    if (!enabled || detectorRef.current) return
+    if (loading) {
+      console.debug('[pose] Already loading, skipping duplicate initialization')
+      return
+    }
+
     let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
     setLoading(true)
+
     ;(async () => {
-      const timeout = setTimeout(() => {
-        if (!cancelled) {
-          console.error('[pose] Initialization timeout after 30s')
-          setLoading(false)
-        }
-      }, 30000)
-
       try {
-        console.log('[pose] Initializing TensorFlow and MoveNet...')
-        const tf = await import('@tensorflow/tfjs')
-        console.log('[pose] TensorFlow imported, setting backend...')
+        // Set absolute timeout - after 30s, force stop
+        timeoutId = setTimeout(() => {
+          if (!cancelled) {
+            console.error('[pose] Initialization timeout after 30s')
+            if (!cancelled) setLoading(false)
+          }
+        }, 30000)
 
+        console.log('[pose] Step 1: Importing TensorFlow...')
+        const tf = await import('@tensorflow/tfjs')
+        if (cancelled) return
+        console.log('[pose] Step 2: TensorFlow imported successfully')
+
+        console.log('[pose] Step 3: Setting up backend...')
         try {
           await tf.setBackend('webgl')
-          console.log('[pose] WebGL backend set successfully')
+          console.log('[pose] Step 4a: WebGL backend ready')
         } catch (webglErr) {
-          console.warn('[pose] WebGL backend failed:', webglErr)
-          console.log('[pose] Trying CPU backend...')
+          console.warn('[pose] Step 4a: WebGL failed, using CPU:', webglErr)
           await tf.setBackend('cpu')
-          console.log('[pose] CPU backend set successfully')
+          console.log('[pose] Step 4b: CPU backend ready')
         }
 
+        if (cancelled) return
+        console.log('[pose] Step 5: Waiting for TensorFlow to be ready...')
         await tf.ready()
-        console.log('[pose] TensorFlow backend ready')
+        if (cancelled) return
+        console.log('[pose] Step 6: TensorFlow is ready')
 
-        console.log('[pose] Loading pose-detection module...')
+        console.log('[pose] Step 7: Importing pose-detection...')
         const pd = await import('@tensorflow-models/pose-detection')
-        console.log('[pose] Pose-detection module imported, version:', (pd as any).version)
+        if (cancelled) return
+        console.log('[pose] Step 8: Pose-detection imported')
 
-        console.log('[pose] Creating MoveNet detector...')
-        const modelType = (pd as any).movenet?.modelType?.SINGLEPOSE_LIGHTNING
-        console.log('[pose] Model type:', modelType)
-
+        console.log('[pose] Step 9: Creating MoveNet detector...')
         const detector = await pd.createDetector(
           pd.SupportedModels.MoveNet,
-          { modelType }
+          { modelType: (pd as any).movenet?.modelType?.SINGLEPOSE_LIGHTNING }
         )
-        console.log('[pose] MoveNet detector created successfully')
+        if (cancelled) return
+        console.log('[pose] Step 10: Detector created successfully!')
 
-        if (!cancelled) {
-          detectorRef.current = detector as unknown as Detector
-          setReady(true)
-          setLoading(false)
-        }
+        detectorRef.current = detector as unknown as Detector
+        setReady(true)
+        setLoading(false)
       } catch (err) {
-        console.error('[pose] Initialization failed:', err)
-        console.error('[pose] Error type:', err instanceof Error ? err.constructor.name : typeof err)
-        console.error('[pose] Error message:', err instanceof Error ? err.message : String(err))
-        if (err instanceof Error && err.stack) {
+        console.error('[pose] FAILED at step:', err)
+        if (err instanceof Error) {
+          console.error('[pose] Error:', err.message)
           console.error('[pose] Stack:', err.stack)
         }
         if (!cancelled) setLoading(false)
       } finally {
-        clearTimeout(timeout)
+        if (timeoutId) clearTimeout(timeoutId)
       }
     })()
-    return () => { cancelled = true }
+
+    return () => {
+      cancelled = true
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [enabled])
 
   const detect = useCallback(async (video: HTMLVideoElement | null) => {
