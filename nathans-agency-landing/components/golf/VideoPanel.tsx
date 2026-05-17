@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
 import { Play, Pause, ZoomIn, ZoomOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
