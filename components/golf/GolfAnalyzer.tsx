@@ -17,7 +17,7 @@ import { useAIAnalysis } from '@/hooks/golf/useAIAnalysis'
 import { useClubPath } from '@/hooks/golf/useClubPath'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
-import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw } from 'lucide-react'
+import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw, PersonStanding } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 
@@ -283,6 +283,30 @@ export function GolfAnalyzer() {
             {mode === 'dual' ? 'Single view' : 'Dual view'}
           </Button>
 
+          {video1Url && (
+            <Button
+              size="sm"
+              disabled
+              variant="ghost"
+              className="h-8 gap-1.5 text-xs text-zinc-500 opacity-50 cursor-not-allowed"
+              title="Pose detection coming soon"
+            >
+              <PersonStanding className="h-3.5 w-3.5" />
+              Pose V1
+            </Button>
+          )}
+          {video1Url && video2Url && (
+            <Button
+              size="sm"
+              disabled
+              variant="ghost"
+              className="h-8 gap-1.5 text-xs text-zinc-500 opacity-50 cursor-not-allowed"
+              title="Pose detection coming soon"
+            >
+              <PersonStanding className="h-3.5 w-3.5" />
+              Pose V2
+            </Button>
+          )}
           {video1Url && (
             <Button
               size="sm"
