@@ -36,21 +36,36 @@ export function usePoseDetection() {
     let cancelled = false
     setLoading(true)
     ;(async () => {
+      const timeout = setTimeout(() => {
+        if (!cancelled) {
+          console.error('[pose] Initialization timeout after 30s')
+          setLoading(false)
+        }
+      }, 30000)
+
       try {
         console.log('[pose] Initializing TensorFlow and MoveNet...')
         // Import the full tfjs bundle (includes backends)
         const tf = await import('@tensorflow/tfjs')
         console.log('[pose] TensorFlow imported, setting backend...')
-        await tf.setBackend('webgl').catch(() => {
-          console.warn('[pose] WebGL backend failed, falling back to CPU')
-          return tf.setBackend('cpu')
-        })
+
+        const backends = await Promise.allSettled([
+          tf.setBackend('webgl'),
+          Promise.resolve()
+        ])
+
+        if (backends[0].status === 'rejected') {
+          console.warn('[pose] WebGL failed, trying CPU')
+          await tf.setBackend('cpu')
+        }
+
         await tf.ready()
         console.log('[pose] TensorFlow backend ready')
 
         // Import pose-detection using namespace import to avoid named-export issues
+        console.log('[pose] Loading pose-detection module...')
         const pd = await import('@tensorflow-models/pose-detection')
-        console.log('[pose] Pose-detection module imported')
+        console.log('[pose] Pose-detection module imported, creating detector...')
 
         const detector = await pd.createDetector(
           pd.SupportedModels.MoveNet,
@@ -64,7 +79,9 @@ export function usePoseDetection() {
         }
       } catch (err) {
         console.error('[pose] Initialization failed', err)
+        if (!cancelled) setLoading(false)
       } finally {
+        clearTimeout(timeout)
         if (!cancelled) setLoading(false)
       }
     })()
