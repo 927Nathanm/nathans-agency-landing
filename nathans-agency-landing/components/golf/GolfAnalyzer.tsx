@@ -221,7 +221,7 @@ export function GolfAnalyzer() {
     if (ai.pendingAnnotations.length === 0) return
     annotations.addAIAnnotations(ai.pendingAnnotations, 1)
     ai.clearPendingAnnotations()
-  }, [])
+  }, [ai.pendingAnnotations, annotations, ai.clearPendingAnnotations])
 
   const effectiveDrawingState = clubPath.isTracking
     ? { ...drawing.drawingState, activeTool: 'select' as const }
