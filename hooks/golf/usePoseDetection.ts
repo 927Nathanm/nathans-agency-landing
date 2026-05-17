@@ -23,12 +23,44 @@ export const POSE_EDGES: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [28, 32],
 ]
 
+type PoseLandmark = { x: number; y: number; z: number; visibility?: number }
+type PoseResults = { poseLandmarks?: PoseLandmark[] }
 type PoseInstance = {
   setOptions: (opts: object) => void
-  onResults: (cb: (results: { poseLandmarks?: Array<{ x: number; y: number; z: number; visibility?: number }> }) => void) => void
+  onResults: (cb: (results: PoseResults) => void) => void
   initialize: () => Promise<void>
   send: (inputs: { image: HTMLVideoElement }) => Promise<void>
   close: () => void
+}
+type PoseConstructor = new (config: { locateFile: (file: string) => string }) => PoseInstance
+
+declare global {
+  interface Window {
+    Pose?: PoseConstructor
+  }
+}
+
+const MEDIAPIPE_VERSION = '0.5.1675469404'
+const MEDIAPIPE_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/pose@${MEDIAPIPE_VERSION}`
+
+let scriptPromise: Promise<void> | null = null
+
+function loadMediaPipeScript(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('SSR'))
+  if (window.Pose) return Promise.resolve()
+  if (scriptPromise) return scriptPromise
+  scriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = `${MEDIAPIPE_CDN}/pose.js`
+    script.crossOrigin = 'anonymous'
+    script.onload = () => resolve()
+    script.onerror = () => {
+      scriptPromise = null
+      reject(new Error('Failed to load MediaPipe Pose script from CDN'))
+    }
+    document.head.appendChild(script)
+  })
+  return scriptPromise
 }
 
 export function usePoseDetection() {
@@ -46,12 +78,14 @@ export function usePoseDetection() {
     setLoading(true)
     ;(async () => {
       try {
-        const { Pose } = await import('@mediapipe/pose')
+        await loadMediaPipeScript()
+        if (cancelled) return
+        const PoseCtor = window.Pose
+        if (!PoseCtor) throw new Error('MediaPipe Pose constructor not available')
 
-        const pose = new Pose({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`,
-        }) as unknown as PoseInstance
+        const pose = new PoseCtor({
+          locateFile: (file: string) => `${MEDIAPIPE_CDN}/${file}`,
+        })
 
         pose.setOptions({
           modelComplexity: 1,
@@ -79,7 +113,7 @@ export function usePoseDetection() {
         await pose.initialize()
 
         if (!cancelled) {
-          poseRef.current = pose as unknown as PoseInstance
+          poseRef.current = pose
           setReady(true)
         }
       } catch (err) {
