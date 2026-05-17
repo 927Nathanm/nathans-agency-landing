@@ -154,7 +154,7 @@ export const DrawingCanvas = forwardRef<HTMLCanvasElement, Props>(
       ctx.restore()
     }, [drawingState, clubPathActive])
 
-    useEffect(() => { redrawCanvas() }, [redrawCanvas])
+    useEffect(() => { redrawCanvas() }, [drawingState, clubPathActive])
 
     const commitAnnotation = useCallback(
       (points: Point[]) => {
