@@ -135,7 +135,7 @@ export function useAIAnalysis(currentTime: number) {
         }))
       }
     },
-    [state.messages, currentTime]
+    [currentTime]
   )
 
   const clearPendingAnnotations = useCallback(() => {
