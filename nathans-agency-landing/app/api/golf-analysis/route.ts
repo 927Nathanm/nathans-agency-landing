@@ -4,12 +4,12 @@ import { NextRequest } from 'next/server'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { messages, hasFrame1, hasFrame2, frameTime } = body
+    const { messages, frame1, frame2, frameTime } = body
 
     const responseText = generateGolfResponse({
       messages: messages ?? [],
-      hasFrame1: !!hasFrame1,
-      hasFrame2: !!hasFrame2,
+      hasFrame1: !!frame1,
+      hasFrame2: !!frame2,
       frameTime,
     })
 
