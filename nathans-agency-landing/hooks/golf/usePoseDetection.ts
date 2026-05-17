@@ -45,44 +45,51 @@ export function usePoseDetection() {
 
       try {
         console.log('[pose] Initializing TensorFlow and MoveNet...')
-        // Import the full tfjs bundle (includes backends)
         const tf = await import('@tensorflow/tfjs')
         console.log('[pose] TensorFlow imported, setting backend...')
 
-        const backends = await Promise.allSettled([
-          tf.setBackend('webgl'),
-          Promise.resolve()
-        ])
-
-        if (backends[0].status === 'rejected') {
-          console.warn('[pose] WebGL failed, trying CPU')
+        try {
+          await tf.setBackend('webgl')
+          console.log('[pose] WebGL backend set successfully')
+        } catch (webglErr) {
+          console.warn('[pose] WebGL backend failed:', webglErr)
+          console.log('[pose] Trying CPU backend...')
           await tf.setBackend('cpu')
+          console.log('[pose] CPU backend set successfully')
         }
 
         await tf.ready()
         console.log('[pose] TensorFlow backend ready')
 
-        // Import pose-detection using namespace import to avoid named-export issues
         console.log('[pose] Loading pose-detection module...')
         const pd = await import('@tensorflow-models/pose-detection')
-        console.log('[pose] Pose-detection module imported, creating detector...')
+        console.log('[pose] Pose-detection module imported, version:', (pd as any).version)
+
+        console.log('[pose] Creating MoveNet detector...')
+        const modelType = (pd as any).movenet?.modelType?.SINGLEPOSE_LIGHTNING
+        console.log('[pose] Model type:', modelType)
 
         const detector = await pd.createDetector(
           pd.SupportedModels.MoveNet,
-          { modelType: (pd as any).movenet.modelType.SINGLEPOSE_LIGHTNING },
+          { modelType }
         )
         console.log('[pose] MoveNet detector created successfully')
 
         if (!cancelled) {
           detectorRef.current = detector as unknown as Detector
           setReady(true)
+          setLoading(false)
         }
       } catch (err) {
-        console.error('[pose] Initialization failed', err)
+        console.error('[pose] Initialization failed:', err)
+        console.error('[pose] Error type:', err instanceof Error ? err.constructor.name : typeof err)
+        console.error('[pose] Error message:', err instanceof Error ? err.message : String(err))
+        if (err instanceof Error && err.stack) {
+          console.error('[pose] Stack:', err.stack)
+        }
         if (!cancelled) setLoading(false)
       } finally {
         clearTimeout(timeout)
-        if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
