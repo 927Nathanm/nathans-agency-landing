@@ -4,7 +4,6 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { clamp, detectFps } from '@/lib/golf/videoUtils'
 
 export type SyncMode = 'sync' | 'independent'
-export type CropRange = { start: number; end: number | null }
 
 export function useVideoSync() {
   const videoRef1 = useRef<HTMLVideoElement>(null)
@@ -25,21 +24,15 @@ export function useVideoSync() {
   const [abLoop, setAbLoop] = useState<{ a: number | null; b: number | null }>({ a: null, b: null })
   const [fps, setFps] = useState(60)
   const [syncMode, setSyncMode] = useState<SyncMode>('sync')
-  const [crop1, setCrop1State] = useState<CropRange>({ start: 0, end: null })
-  const [crop2, setCrop2State] = useState<CropRange>({ start: 0, end: null })
 
   // Refs that the RAF loops read — kept current so callbacks don't need recreating
   const syncModeRef = useRef<SyncMode>('sync')
   const abLoopRef = useRef(abLoop)
-  const crop1Ref = useRef(crop1)
-  const crop2Ref = useRef(crop2)
   const duration1Ref = useRef(0)
   const duration2Ref = useRef(0)
 
   useEffect(() => { syncModeRef.current = syncMode }, [syncMode])
   useEffect(() => { abLoopRef.current = abLoop }, [abLoop])
-  useEffect(() => { crop1Ref.current = crop1 }, [crop1])
-  useEffect(() => { crop2Ref.current = crop2 }, [crop2])
   useEffect(() => { duration1Ref.current = duration }, [duration])
   useEffect(() => { duration2Ref.current = duration2 }, [duration2])
 
@@ -57,16 +50,6 @@ export function useVideoSync() {
       const v2 = videoRef2.current
       const mode = syncModeRef.current
       const loop = abLoopRef.current
-      const c1 = crop1Ref.current
-      const dur1 = duration1Ref.current
-
-      // Clamp V1 to its crop range
-      const cropEnd1 = c1.end !== null ? c1.end : dur1
-      if (dur1 > 0 && cropEnd1 > 0 && masterTime >= cropEnd1) {
-        v1.currentTime = c1.start
-      } else if (masterTime < c1.start) {
-        v1.currentTime = c1.start
-      }
 
       if (mode === 'sync' && v2) {
         // Keep V2 aligned with V1
@@ -90,18 +73,6 @@ export function useVideoSync() {
     syncLoop2FnRef.current = () => {
       const v2 = videoRef2.current
       if (!v2) return
-      const c2 = crop2Ref.current
-      const dur2 = duration2Ref.current
-      const t = v2.currentTime
-
-      // Clamp V2 to its crop range
-      const cropEnd2 = c2.end !== null ? c2.end : dur2
-      if (dur2 > 0 && cropEnd2 > 0 && t >= cropEnd2) {
-        v2.currentTime = c2.start
-      } else if (t < c2.start) {
-        v2.currentTime = c2.start
-      }
-
       setCurrentTime2(v2.currentTime)
       raf2Ref.current = requestAnimationFrame(syncLoop2FnRef.current)
     }
@@ -240,17 +211,6 @@ export function useVideoSync() {
     setCurrentTime2(t)
   }, [currentTime])
 
-  // Per-video crop controls
-  const setCropPoint1 = useCallback((point: 'start' | 'end', time: number) => {
-    setCrop1State(prev => ({ ...prev, [point]: time }))
-  }, [])
-
-  const setCropPoint2 = useCallback((point: 'start' | 'end', time: number) => {
-    setCrop2State(prev => ({ ...prev, [point]: time }))
-  }, [])
-
-  const clearCrop1 = useCallback(() => setCrop1State({ start: 0, end: null }), [])
-  const clearCrop2 = useCallback(() => setCrop2State({ start: 0, end: null }), [])
 
   const onVideoLoaded = useCallback(async (slot: 1 | 2) => {
     const video = slot === 1 ? videoRef1.current : videoRef2.current
@@ -258,11 +218,9 @@ export function useVideoSync() {
     if (slot === 1) {
       setDuration(video.duration)
       duration1Ref.current = video.duration
-      setCrop1State({ start: 0, end: null })
     } else {
       setDuration2(video.duration)
       duration2Ref.current = video.duration
-      setCrop2State({ start: 0, end: null })
       // In sync mode the shared scrubber covers both videos
       setDuration(prev => Math.max(prev, video.duration))
     }
@@ -291,8 +249,6 @@ export function useVideoSync() {
     abLoop,
     fps,
     syncMode,
-    crop1,
-    crop2,
     play,
     pause,
     play2,
@@ -309,10 +265,6 @@ export function useVideoSync() {
     clearLoop,
     toggleSyncMode,
     syncV2ToV1,
-    setCropPoint1,
-    setCropPoint2,
-    clearCrop1,
-    clearCrop2,
     onVideoLoaded,
   }
 }
