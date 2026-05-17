@@ -23,6 +23,8 @@ interface Props {
   abLoop: { a: number | null; b: number | null }
   crop1?: CropRange
   crop2?: CropRange
+  currentTime: number
+  currentTime2?: number
   hasVideo1: boolean
   hasVideo2: boolean
   onTogglePlay: () => void
@@ -42,6 +44,8 @@ export function VideoControls({
   abLoop,
   crop1,
   crop2,
+  currentTime,
+  currentTime2,
   hasVideo1,
   hasVideo2,
   onTogglePlay,
@@ -54,8 +58,9 @@ export function VideoControls({
   onClearCrop,
 }: Props) {
   const hasAny = hasVideo1 || hasVideo2
-  const hasCrop1 = crop1?.end !== null || crop1?.start !== 0
-  const hasCrop2 = crop2?.end !== null || crop2?.start !== 0
+  const hasCrop1 = (crop1?.end ?? null) !== null || (crop1?.start ?? 0) !== 0
+  const hasCrop2 = (crop2?.end ?? null) !== null || (crop2?.start ?? 0) !== 0
+  const t2 = currentTime2 ?? currentTime
 
   return (
     <div className="flex items-center justify-center gap-2 flex-wrap px-2 py-2 bg-zinc-900 rounded-lg border border-zinc-800">
@@ -180,44 +185,74 @@ export function VideoControls({
         )}
       </div>
 
-      {/* Crop controls */}
+      {/* Crop controls — set start/end of playback range at current playhead */}
       {onSetCropPoint && onClearCrop && (
         <div className="flex items-center gap-1 ml-1">
+          <span className="text-xs text-zinc-500 mr-1"><Crop className="h-3 w-3 inline mr-1" />V1</span>
           <Button
             size="sm"
-            variant={hasCrop1 ? 'secondary' : 'ghost'}
+            variant={(crop1?.start ?? 0) !== 0 ? 'secondary' : 'ghost'}
             className="h-8 px-2 text-xs text-zinc-300"
             disabled={!hasVideo1}
-            onClick={() => onSetCropPoint(1, 'start', 0)}
-            title="Crop video 1 start"
+            onClick={() => onSetCropPoint(1, 'start', currentTime)}
+            title="Set V1 crop start at current playhead"
           >
-            <Crop className="h-3 w-3 mr-1" /> C1
+            In
           </Button>
-          {hasVideo2 && (
-            <Button
-              size="sm"
-              variant={hasCrop2 ? 'secondary' : 'ghost'}
-              className="h-8 px-2 text-xs text-zinc-300"
-              disabled={!hasVideo2}
-              onClick={() => onSetCropPoint(2, 'start', 0)}
-              title="Crop video 2 start"
-            >
-              <Crop className="h-3 w-3 mr-1" /> C2
-            </Button>
-          )}
-          {(hasCrop1 || hasCrop2) && (
+          <Button
+            size="sm"
+            variant={(crop1?.end ?? null) !== null ? 'secondary' : 'ghost'}
+            className="h-8 px-2 text-xs text-zinc-300"
+            disabled={!hasVideo1}
+            onClick={() => onSetCropPoint(1, 'end', currentTime)}
+            title="Set V1 crop end at current playhead"
+          >
+            Out
+          </Button>
+          {hasCrop1 && (
             <Button
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-zinc-500 hover:text-red-400"
-              onClick={() => {
-                if (hasCrop1) onClearCrop(1)
-                if (hasCrop2) onClearCrop(2)
-              }}
-              title="Clear crops"
+              onClick={() => onClearCrop(1)}
+              title="Clear V1 crop"
             >
               <X className="h-3 w-3" />
             </Button>
+          )}
+          {hasVideo2 && (
+            <>
+              <span className="text-xs text-zinc-500 mr-1 ml-1"><Crop className="h-3 w-3 inline mr-1" />V2</span>
+              <Button
+                size="sm"
+                variant={(crop2?.start ?? 0) !== 0 ? 'secondary' : 'ghost'}
+                className="h-8 px-2 text-xs text-zinc-300"
+                onClick={() => onSetCropPoint(2, 'start', t2)}
+                title="Set V2 crop start at current playhead"
+              >
+                In
+              </Button>
+              <Button
+                size="sm"
+                variant={(crop2?.end ?? null) !== null ? 'secondary' : 'ghost'}
+                className="h-8 px-2 text-xs text-zinc-300"
+                onClick={() => onSetCropPoint(2, 'end', t2)}
+                title="Set V2 crop end at current playhead"
+              >
+                Out
+              </Button>
+              {hasCrop2 && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-zinc-500 hover:text-red-400"
+                  onClick={() => onClearCrop(2)}
+                  title="Clear V2 crop"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </>
           )}
         </div>
       )}

@@ -477,6 +477,8 @@ export function GolfAnalyzer() {
               abLoop={sync.abLoop}
               crop1={sync.crop1}
               crop2={sync.crop2}
+              currentTime={sync.currentTime}
+              currentTime2={sync.currentTime2}
               hasVideo1={!!video1Url}
               hasVideo2={!!video2Url}
               onTogglePlay={sync.togglePlay}
