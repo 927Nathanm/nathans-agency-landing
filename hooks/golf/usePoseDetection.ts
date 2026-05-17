@@ -37,6 +37,15 @@ export function usePoseDetection() {
     setLoading(true)
     ;(async () => {
       try {
+        // Pose detection temporarily disabled due to TensorFlow bundling issues
+        // This will be re-enabled once TensorFlow is properly configured for browser usage
+        console.log('Pose detection is currently disabled')
+        if (!cancelled) {
+          setReady(false)
+          setLoading(false)
+        }
+        return
+
         // Import the full tfjs bundle (includes backends)
         const tf = await import('@tensorflow/tfjs')
         await tf.setBackend('webgl').catch(() => tf.setBackend('cpu'))
