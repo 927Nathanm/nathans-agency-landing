@@ -1,5 +1,7 @@
 'use client'
 
+console.log('[pose] usePoseDetection.ts module loaded')
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type Keypoint = {
