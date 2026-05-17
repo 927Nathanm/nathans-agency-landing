@@ -428,9 +428,6 @@ export function GolfAnalyzer() {
                     isPlaying={sync.isPlaying}
                     onTogglePlay={sync.togglePlay}
                     onStepFrame={sync.stepFrame}
-                    crop={sync.crop1}
-                    onSetCrop={sync.setCropPoint1}
-                    onClearCrop={sync.clearCrop1}
                   />
                 </div>
                 <div className="bg-zinc-900 rounded-lg border border-zinc-800 px-2 py-1.5">
@@ -442,9 +439,6 @@ export function GolfAnalyzer() {
                     isPlaying={sync.isPlaying2}
                     onTogglePlay={sync.togglePlay2}
                     onStepFrame={sync.stepFrame2}
-                    crop={sync.crop2}
-                    onSetCrop={sync.setCropPoint2}
-                    onClearCrop={sync.clearCrop2}
                   />
                 </div>
               </div>
@@ -454,9 +448,6 @@ export function GolfAnalyzer() {
                 duration={sync.duration}
                 abLoop={sync.abLoop}
                 onSeek={sync.seek}
-                crop={sync.crop1}
-                onSetCrop={sync.setCropPoint1}
-                onClearCrop={sync.clearCrop1}
               />
             )}
 

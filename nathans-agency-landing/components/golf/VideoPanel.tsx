@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
-import { Play, Pause } from 'lucide-react'
+import { Play, Pause, ZoomIn, ZoomOut } from 'lucide-react'
 import { VideoUploader } from './VideoUploader'
 import { AnnotationLayer } from './AnnotationLayer'
 import { DrawingCanvas } from './DrawingCanvas'
@@ -86,6 +86,7 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [videoAspect, setVideoAspect] = useState<number | null>(null)
     const [hoveringVideo, setHoveringVideo] = useState(false)
+    const [zoom, setZoom] = useState(1)
 
     useImperativeHandle(ref, () => ({
       annotationCanvasRef,
@@ -160,10 +161,37 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
 
     return (
       <div className="flex flex-col h-full gap-1">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex items-center justify-between px-1 gap-2">
           <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
             {label}
           </span>
+          <div className="flex items-center gap-1">
+            {objectUrl && (
+              <>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-zinc-400 hover:text-zinc-200"
+                  onClick={() => setZoom(Math.max(1, zoom - 0.2))}
+                  title="Zoom out"
+                >
+                  <ZoomOut className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-xs text-zinc-400 w-8 text-center">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-zinc-400 hover:text-zinc-200"
+                  onClick={() => setZoom(Math.min(3, zoom + 0.2))}
+                  title="Zoom in"
+                >
+                  <ZoomIn className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
           {objectUrl && (
             <>
               <button
@@ -210,7 +238,8 @@ export const VideoPanel = forwardRef<VideoPanelHandle, Props>(
                 playsInline
                 preload="auto"
                 style={{
-                  transform: isMirrored ? 'scaleX(-1)' : undefined,
+                  transform: `${isMirrored ? 'scaleX(-1) ' : ''}scale(${zoom})`,
+                  transformOrigin: 'center',
                   zIndex: 0,
                 }}
                 onLoadedMetadata={() => onVideoLoaded(slot)}

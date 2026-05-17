@@ -1,10 +1,9 @@
 'use client'
 
 import { useRef, useCallback, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, X } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatTime } from '@/lib/golf/videoUtils'
-import type { CropRange } from '@/hooks/golf/useVideoSync'
 
 interface Props {
   currentTime: number
@@ -16,13 +15,9 @@ interface Props {
   onTogglePlay?: () => void
   onStepFrame?: (dir: 1 | -1) => void
   label?: string
-  // Crop
-  crop?: CropRange
-  onSetCrop?: (point: 'start' | 'end', time: number) => void
-  onClearCrop?: () => void
 }
 
-type DragTarget = 'seek' | 'crop-start' | 'crop-end'
+type DragTarget = 'seek'
 
 export function VideoScrubber({
   currentTime,
@@ -33,9 +28,6 @@ export function VideoScrubber({
   onTogglePlay,
   onStepFrame,
   label,
-  crop,
-  onSetCrop,
-  onClearCrop,
 }: Props) {
   const barRef = useRef<HTMLDivElement>(null)
   const dragTarget = useRef<DragTarget | null>(null)
@@ -52,33 +44,13 @@ export function VideoScrubber({
     [duration],
   )
 
-  // Detect whether clientX is near a crop handle (within 8px)
-  const nearCropHandle = useCallback(
-    (clientX: number): 'crop-start' | 'crop-end' | null => {
-      const bar = barRef.current
-      if (!bar || !crop || !onSetCrop || duration === 0) return null
-      const rect = bar.getBoundingClientRect()
-      const pxPerSec = rect.width / duration
-      const startPx = rect.left + crop.start * pxPerSec
-      const endPx = rect.left + (crop.end ?? duration) * pxPerSec
-      if (Math.abs(clientX - startPx) < 8) return 'crop-start'
-      if (Math.abs(clientX - endPx) < 8) return 'crop-end'
-      return null
-    },
-    [crop, duration, onSetCrop],
-  )
-
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
-      const handle = nearCropHandle(e.clientX)
-      dragTarget.current = handle ?? 'seek'
+      dragTarget.current = 'seek'
       e.currentTarget.setPointerCapture(e.pointerId)
-      const t = getTimeFromClientX(e.clientX)
-      if (handle === 'crop-start') onSetCrop?.('start', t)
-      else if (handle === 'crop-end') onSetCrop?.('end', t)
-      else onSeek(t)
+      onSeek(getTimeFromClientX(e.clientX))
     },
-    [nearCropHandle, getTimeFromClientX, onSeek, onSetCrop],
+    [getTimeFromClientX, onSeek],
   )
 
   const onPointerMove = useCallback(
@@ -86,33 +58,23 @@ export function VideoScrubber({
       const t = getTimeFromClientX(e.clientX)
       setHoverTime(t)
       if (!dragTarget.current) return
-      if (dragTarget.current === 'seek') onSeek(t)
-      else if (dragTarget.current === 'crop-start') onSetCrop?.('start', t)
-      else if (dragTarget.current === 'crop-end') onSetCrop?.('end', t)
+      onSeek(t)
     },
-    [getTimeFromClientX, onSeek, onSetCrop],
+    [getTimeFromClientX, onSeek],
   )
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
       if (!dragTarget.current) return
-      const t = getTimeFromClientX(e.clientX)
-      if (dragTarget.current === 'seek') onSeek(t)
-      else if (dragTarget.current === 'crop-start') onSetCrop?.('start', t)
-      else if (dragTarget.current === 'crop-end') onSetCrop?.('end', t)
+      onSeek(getTimeFromClientX(e.clientX))
       dragTarget.current = null
     },
-    [getTimeFromClientX, onSeek, onSetCrop],
+    [getTimeFromClientX, onSeek],
   )
 
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0
   const loopAPct = abLoop?.a != null && duration > 0 ? (abLoop.a / duration) * 100 : null
   const loopBPct = abLoop?.b != null && duration > 0 ? (abLoop.b / duration) * 100 : null
-  const cropStartPct = crop && duration > 0 ? (crop.start / duration) * 100 : 0
-  const cropEndPct = crop && duration > 0 ? ((crop.end ?? duration) / duration) * 100 : 100
-  const hasCrop = crop && (crop.start > 0 || crop.end !== null)
-
-  const cursor = nearCropHandle(0) ? 'ew-resize' : 'pointer'
 
   return (
     <div className="flex flex-col gap-1 select-none">
@@ -141,15 +103,6 @@ export function VideoScrubber({
               )}
             </div>
           )}
-          {hasCrop && onClearCrop && (
-            <button
-              className="flex items-center gap-0.5 text-xs text-amber-400 hover:text-amber-200 ml-1"
-              onClick={onClearCrop}
-              title="Clear crop"
-            >
-              <X className="h-3 w-3" /> crop
-            </button>
-          )}
         </div>
       )}
 
@@ -162,7 +115,7 @@ export function VideoScrubber({
         <div
           ref={barRef}
           className="relative flex-1 h-7 flex items-center"
-          style={{ cursor }}
+          style={{ cursor: 'pointer' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -171,29 +124,6 @@ export function VideoScrubber({
         >
           {/* Full track background */}
           <div className="absolute inset-x-0 h-1.5 rounded-full bg-zinc-700" />
-
-          {/* Crop dimmed regions (before cropStart and after cropEnd) */}
-          {crop && (
-            <>
-              {crop.start > 0 && (
-                <div
-                  className="absolute h-1.5 bg-zinc-900/80 rounded-l-full pointer-events-none"
-                  style={{ left: 0, width: `${cropStartPct}%` }}
-                />
-              )}
-              {crop.end !== null && crop.end < duration && (
-                <div
-                  className="absolute h-1.5 bg-zinc-900/80 rounded-r-full pointer-events-none"
-                  style={{ left: `${cropEndPct}%`, right: 0 }}
-                />
-              )}
-              {/* Active crop region highlight */}
-              <div
-                className="absolute h-1.5 bg-amber-500/20 pointer-events-none"
-                style={{ left: `${cropStartPct}%`, width: `${cropEndPct - cropStartPct}%` }}
-              />
-            </>
-          )}
 
           {/* A-B loop region */}
           {loopAPct !== null && loopBPct !== null && (
@@ -206,7 +136,7 @@ export function VideoScrubber({
           {/* Progress fill */}
           <div
             className="absolute h-1.5 bg-green-500 rounded-full pointer-events-none"
-            style={{ left: `${cropStartPct}%`, width: `${Math.max(0, pct - cropStartPct)}%` }}
+            style={{ width: `${pct}%` }}
           />
 
           {/* A-B loop markers */}
@@ -215,30 +145,6 @@ export function VideoScrubber({
           )}
           {loopBPct !== null && (
             <div className="absolute h-4 w-0.5 bg-yellow-400 rounded pointer-events-none" style={{ left: `${loopBPct}%` }} />
-          )}
-
-          {/* Crop handles */}
-          {crop && onSetCrop && (
-            <>
-              {/* Start handle — left-pointing bracket */}
-              <div
-                className="absolute z-10 flex items-center justify-center cursor-ew-resize"
-                style={{ left: `${cropStartPct}%`, transform: 'translateX(-50%)' }}
-                title="Drag to set crop start"
-              >
-                <div className="h-5 w-1 bg-amber-400 rounded-sm shadow-lg" />
-                <div className="absolute top-0 h-full w-3 -left-1" /> {/* wider hit zone */}
-              </div>
-              {/* End handle */}
-              <div
-                className="absolute z-10 flex items-center justify-center cursor-ew-resize"
-                style={{ left: `${cropEndPct}%`, transform: 'translateX(-50%)' }}
-                title="Drag to set crop end"
-              >
-                <div className="h-5 w-1 bg-amber-400 rounded-sm shadow-lg" />
-                <div className="absolute top-0 h-full w-3 -left-1" />
-              </div>
-            </>
           )}
 
           {/* Hover time tooltip */}
