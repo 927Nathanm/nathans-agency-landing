@@ -32,7 +32,11 @@ export function usePoseDetection() {
   const inflightRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled || detectorRef.current) return
+    console.log('[pose] useEffect triggered: enabled=', enabled, 'detectorRef=', !!detectorRef.current, 'loading=', loading)
+    if (!enabled || detectorRef.current) {
+      console.log('[pose] useEffect bailed out: !enabled=' + !enabled + ' || detectorRef.current=' + !!detectorRef.current)
+      return
+    }
     if (loading) {
       console.debug('[pose] Already loading, skipping duplicate initialization')
       return
@@ -144,11 +148,13 @@ export function usePoseDetection() {
   }, [enabled, ready])
 
   const toggle = useCallback(() => {
+    console.log('[pose] Toggle called, current enabled state:', enabled)
     setEnabled(e => {
+      console.log('[pose] Setting enabled from', e, 'to', !e)
       if (e) setKeypoints([])
       return !e
     })
-  }, [])
+  }, [enabled])
 
   return { enabled, ready, loading, keypoints, detect, toggle }
 }
