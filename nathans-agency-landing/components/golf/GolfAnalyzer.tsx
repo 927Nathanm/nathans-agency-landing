@@ -151,8 +151,9 @@ export function GolfAnalyzer() {
       urlRef2.current = url
       setVideo2Url(url)
       setMode('dual')
+      drawing.setTargetVideo('both')
     }
-  }, [])
+  }, [drawing])
 
   const handleAnnotationComplete = useCallback(
     (ann: Omit<Annotation, 'id' | 'source'>, slot: 1 | 2) => {
