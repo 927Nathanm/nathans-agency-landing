@@ -35,13 +35,11 @@ const TOOLS = [
   {
     name: 'markSwingPlane',
     description:
-      "Draw the user's swing plane on Video 1. Call this when the user asks " +
-      'to mark, draw, show, or visualize their swing plane. The system computes ' +
-      "the geometry from the user's address-position pose — if they've also " +
-      'traced a club path, that improves accuracy, but it is NOT required: the ' +
-      'system falls back to the user\'s foot position as a ball proxy. Only ' +
-      'precondition is that pose detection has been enabled on Video 1 and ' +
-      'some frames have been recorded. Always try calling this tool when asked.',
+      "Draw the user's swing plane on Video 1. ONLY call this when the user " +
+      'explicitly asks to draw, mark, or visualize their SWING PLANE specifically. ' +
+      'Do NOT call for general analysis questions. The geometry is computed from ' +
+      "the user's address-position pose; traced club path improves accuracy but " +
+      'is not required (falls back to foot position).',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -51,13 +49,12 @@ const TOOLS = [
   {
     name: 'markHandPath',
     description:
-      "Draw the trace of the user's hand path across the swing on Video 1. " +
-      'Call this when the user asks to mark, draw, show, trace, or visualize ' +
-      'their hand path, hands, or hand arc. The system pulls hand positions from ' +
-      'the recorded pose measurement series and draws the polyline. Only requires ' +
-      'pose detection enabled on Video 1 with enough recorded frames — no club ' +
-      'path tracing needed. Pass `hand: "lead"` (default) for the lead hand, ' +
-      '`hand: "trail"` for the trail hand.',
+      "Draw a polyline trace of the user's hand path across the swing on Video 1. " +
+      'ONLY call this when the user explicitly asks to draw, mark, trace, or ' +
+      'visualize their HAND PATH or HAND ARC specifically. Do NOT call for ' +
+      'general questions like "how are my hands" or "look at my hands" — those ' +
+      'are analysis questions, not draw requests. Pass `hand: "lead"` (default) ' +
+      'or `hand: "trail"`.',
     input_schema: {
       type: 'object' as const,
       properties: {
