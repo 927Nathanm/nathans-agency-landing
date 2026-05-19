@@ -43,6 +43,21 @@ export interface FrameMeasurements {
   leadWristY: number | null
   /** Trail wrist y relative to spine center, normalized by shoulder width. */
   trailWristY: number | null
+
+  // Image-space (0..1, raw video frame coords) — used by phase detection and
+  // geometry builders that need the actual pixel location of body parts.
+  /** Lead-hand x in image space (0..1). */
+  leadHandX: number | null
+  /** Lead-hand y in image space (0..1). */
+  leadHandY: number | null
+  /** Trail-hand x in image space (0..1). */
+  trailHandX: number | null
+  /** Trail-hand y in image space (0..1). */
+  trailHandY: number | null
+  /** Head (nose) x in image space (0..1). */
+  headX: number | null
+  /** Head (nose) y in image space (0..1). */
+  headY: number | null
 }
 
 const MIN_SCORE = 0.4
@@ -106,6 +121,25 @@ export function computeMeasurements(
   let trailWristX: number | null = null
   let leadWristY: number | null = null
   let trailWristY: number | null = null
+  let leadHandX: number | null = null
+  let leadHandY: number | null = null
+  let trailHandX: number | null = null
+  let trailHandY: number | null = null
+  let headX: number | null = null
+  let headY: number | null = null
+
+  if (ok(leadWrist)) {
+    leadHandX = leadWrist.x
+    leadHandY = leadWrist.y
+  }
+  if (ok(trailWrist)) {
+    trailHandX = trailWrist.x
+    trailHandY = trailWrist.y
+  }
+  if (ok(nose)) {
+    headX = nose.x
+    headY = nose.y
+  }
 
   if (ok(ls) && ok(rs) && ok(lh) && ok(rh)) {
     const shoulderMid = midpoint(ls, rs)
@@ -152,6 +186,12 @@ export function computeMeasurements(
     trailWristX: roundOrNull(trailWristX, 3),
     leadWristY: roundOrNull(leadWristY, 3),
     trailWristY: roundOrNull(trailWristY, 3),
+    leadHandX: roundOrNull(leadHandX, 3),
+    leadHandY: roundOrNull(leadHandY, 3),
+    trailHandX: roundOrNull(trailHandX, 3),
+    trailHandY: roundOrNull(trailHandY, 3),
+    headX: roundOrNull(headX, 3),
+    headY: roundOrNull(headY, 3),
   }
 }
 

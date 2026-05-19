@@ -17,6 +17,10 @@ import { useClubPath } from '@/hooks/golf/useClubPath'
 import { captureVideoFrame } from '@/lib/golf/videoUtils'
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
 import { usePoseDetection } from '@/hooks/golf/usePoseDetection'
+import { useSwingMeasurements } from '@/hooks/golf/useSwingMeasurements'
+import { useSwingPhases } from '@/hooks/golf/useSwingPhases'
+import { buildSwingPlaneAnnotation } from '@/lib/golf/aiAnnotations'
+import type { ToolHandlers, ToolHandlerResult } from '@/hooks/golf/useAIAnalysis'
 import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw, PersonStanding, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -44,7 +48,44 @@ export function GolfAnalyzer() {
   const annotations = useAnnotations()
   const clubPath = useClubPath()
 
-  const ai = useAIAnalysis(sync.currentTime)
+  const swing1 = useSwingMeasurements(pose1)
+  const swing2 = useSwingMeasurements(pose2)
+  const phases1 = useSwingPhases(swing1)
+  const phases2 = useSwingPhases(swing2)
+
+  // Tool handlers: the LLM emits a tool_use; this code computes the geometry
+  // from local pose + club-path state and returns an Annotation to render.
+  const toolHandlers: ToolHandlers = {
+    markSwingPlane: (): ToolHandlerResult => {
+      const { p1Frame } = phases1.detect()
+      if (p1Frame === null) {
+        return { ok: false, error: 'P1 (address) not detected. Enable Pose V1 and play through your swing first.' }
+      }
+      const poseFrame = swing1.getKeypointsAt(p1Frame)
+      if (!poseFrame) {
+        return { ok: false, error: 'No pose keypoints available at the detected address frame.' }
+      }
+      const firstClubPoint = clubPath.path1.points[0]
+      if (!firstClubPoint) {
+        return { ok: false, error: 'No club path traced on Video 1 yet. Use the Club Path tool to seed and trace.' }
+      }
+      const v = sync.videoRef1.current
+      const dims = v && v.videoWidth > 0
+        ? { width: v.videoWidth, height: v.videoHeight }
+        : { width: 1920, height: 1080 }
+      const ann = buildSwingPlaneAnnotation({
+        poseFrame,
+        clubPathFirstPoint: { x: firstClubPoint.x, y: firstClubPoint.y },
+        videoDims: dims,
+      })
+      if (!ann) {
+        return { ok: false, error: 'Could not compute swing-plane geometry from the available data.' }
+      }
+      return { ok: true, annotation: ann }
+    },
+  }
+
+  const ai = useAIAnalysis(sync.currentTime, toolHandlers)
 
   const restoredRef = useRef(false)
   useEffect(() => {
@@ -214,14 +255,30 @@ export function GolfAnalyzer() {
       }
       const measurements1 = pose1.getMeasurements()
       const measurements2 = video2Url ? pose2.getMeasurements() : []
+      const p1 = phases1.detect()
+      const p2 = video2Url ? phases2.detect() : { p1Frame: null }
       await ai.sendMessage(text, {
         measurements1,
         measurements2,
         fps: sync.fps,
         cameraAngle: 'unknown',
+        phases1: { p1Frame: p1.p1Frame },
+        phases2: { p1Frame: p2.p1Frame },
+        hasClubPath1: clubPath.path1.points.length > 0,
+        hasClubPath2: clubPath.path2.points.length > 0,
       })
     },
-    [video2Url, ai.sendMessage, pose1.getMeasurements, pose2.getMeasurements, sync.fps]
+    [
+      video2Url,
+      ai.sendMessage,
+      pose1.getMeasurements,
+      pose2.getMeasurements,
+      phases1.detect,
+      phases2.detect,
+      clubPath.path1.points.length,
+      clubPath.path2.points.length,
+      sync.fps,
+    ],
   )
 
   const handleApplyAnnotations = useCallback(() => {

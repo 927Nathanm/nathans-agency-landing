@@ -1,10 +1,16 @@
 import { NextRequest } from 'next/server'
 import { GOLF_SYSTEM_PROMPT } from '@/lib/golf/golfSystemPrompt'
 import { downsampleSeries, type FrameMeasurements } from '@/lib/golf/poseMeasurements'
+import { generateGolfResponse } from '@/lib/golf/builtInAnalysis'
 
 interface ChatMsg {
   role: 'user' | 'assistant'
   content: string
+}
+
+interface PhaseHint {
+  /** Index into measurements series; matches keypoint history on the client. */
+  p1Frame: number | null
 }
 
 interface ReqBody {
@@ -15,33 +21,54 @@ interface ReqBody {
     cameraAngle?: string
     measurements1?: FrameMeasurements[]
     measurements2?: FrameMeasurements[]
+    phases1?: PhaseHint
+    phases2?: PhaseHint
+    hasClubPath1?: boolean
+    hasClubPath2?: boolean
   }
 }
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
-const MODEL = 'claude-haiku-4-5-20251001'
+const MODEL = 'claude-sonnet-4-6'
 
-const MEASUREMENT_SYSTEM_ADDENDUM = `
+const TOOLS = [
+  {
+    name: 'markSwingPlane',
+    description:
+      "Draw the user's swing plane on Video 1. Call this when the user asks " +
+      'to mark, draw, show, or visualize their swing plane. The system computes ' +
+      "the geometry from the user's address-position pose and their traced " +
+      'club path — you do not provide any coordinates. This tool only works ' +
+      'if pose detection is enabled on Video 1 AND a club path has been traced ' +
+      "on Video 1; otherwise the system will tell the user what's missing.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+]
+
+const MEASUREMENT_ADDENDUM = `
 
 ## INPUT FORMAT
 You will receive a JSON block in the user's message tagged <swing-data> containing
-pose-derived measurements over time for one or two swings. All coordinates are
-normalized: positions are in units of shoulder-width (so 0.5 ≈ half a shoulder-width
-from the spine center). Angles are in degrees.
+pose-derived measurements over time and phase indices. Coordinates are normalized
+in units of shoulder-width unless suffixed "X"/"Y" with "Hand" or "head", which
+are in image space (0..1). Angles are in degrees.
 
-Key rules when reasoning over this data:
+Rules:
 - "measurements1" is the user's current swing; "measurements2" (when present) is
   a reference swing for comparison.
-- Each entry is one detected frame with timestamp "t" in seconds.
-- Treat null values as "not measurable on that frame" — don't guess at them.
-- Be specific: cite actual numbers and timestamps from the data rather than
-  generic advice. "At t=0.8s your spine tilt was 32°, but earlier in the
-  takeaway it was 18° — you've lost posture" is the kind of analysis to aim for.
-- The data is 2D from a single camera. Be honest about what you cannot determine:
-  true shoulder rotation, depth-axis motion, club-face angle, and swing plane
-  cannot be measured reliably from this data. Don't fabricate numbers for them.
-- If the cameraAngle is "unknown" or measurements are sparse/empty, say so and
-  ask the user to enable pose detection and play through the swing.
+- Each entry has "t" in seconds. Null fields mean the landmark wasn't measurable
+  on that frame — never guess at them.
+- "phases1.p1Frame" / "phases2.p1Frame" is the index of the address frame, or null.
+- The data is 2D from a single camera. Cannot reliably measure: true shoulder
+  rotation, depth-axis motion, club-face angle, swing-plane angle. Don't fabricate
+  numbers for these.
+- Cite real numbers from the data when making claims. "At t=0.8s your spine
+  tilt was 32°" is better than "your spine tilt looks high."
+- If measurements are empty, ask the user to enable Pose V1 and play through the swing.
 `
 
 function formatSwingData(ctx: ReqBody['context']): string {
@@ -52,24 +79,50 @@ function formatSwingData(ctx: ReqBody['context']): string {
     currentTime: ctx.currentTime,
     fps: ctx.fps,
     cameraAngle: ctx.cameraAngle ?? 'unknown',
+    phases1: ctx.phases1,
+    phases2: ctx.phases2,
+    hasClubPath1: ctx.hasClubPath1 ?? false,
+    hasClubPath2: ctx.hasClubPath2 ?? false,
     measurements1: m1,
     measurements2: m2.length > 0 ? m2 : undefined,
   }
   return `\n\n<swing-data>\n${JSON.stringify(payload)}\n</swing-data>`
 }
 
-export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'ANTHROPIC_API_KEY is not configured on the server. Add it to .env.local to enable AI analysis.',
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    )
-  }
+// -------- Fallback: no API key. Stream the built-in response. ----------------
+function buildFallbackStream(body: ReqBody): Response {
+  const encoder = new TextEncoder()
+  const text = generateGolfResponse({
+    messages: body.messages ?? [],
+    hasFrame1: (body.context?.measurements1?.length ?? 0) > 0,
+    hasFrame2: (body.context?.measurements2?.length ?? 0) > 0,
+    frameTime: body.context?.currentTime,
+  })
 
+  const stream = new ReadableStream({
+    async start(controller) {
+      const words = text.split(' ')
+      for (const word of words) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'text', text: word + ' ' })}\n\n`),
+        )
+        await new Promise(r => setTimeout(r, 8))
+      }
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  })
+}
+
+export async function POST(req: NextRequest) {
   let body: ReqBody
   try {
     body = (await req.json()) as ReqBody
@@ -78,6 +131,12 @@ export async function POST(req: NextRequest) {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     })
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    // No key → fallback to built-in response so the app still works in dev.
+    return buildFallbackStream(body)
   }
 
   const messages = (body.messages ?? []).filter(
@@ -90,8 +149,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Attach the swing-data JSON to the most recent user message so the model
-  // sees it as part of the conversational turn it's responding to.
+  // Attach swing-data JSON to the most recent user message.
   const lastUserIdx = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'user') return i
@@ -118,7 +176,8 @@ export async function POST(req: NextRequest) {
         model: MODEL,
         max_tokens: 1500,
         temperature: 0.2,
-        system: GOLF_SYSTEM_PROMPT + MEASUREMENT_SYSTEM_ADDENDUM,
+        system: GOLF_SYSTEM_PROMPT + MEASUREMENT_ADDENDUM,
+        tools: TOOLS,
         messages,
         stream: true,
       }),
@@ -131,17 +190,25 @@ export async function POST(req: NextRequest) {
   }
 
   if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text().catch(() => '')
+    const errText = await upstream.text().catch(() => '')
     return new Response(
-      JSON.stringify({ error: `Anthropic API error ${upstream.status}: ${text.slice(0, 500)}` }),
+      JSON.stringify({ error: `Anthropic API error ${upstream.status}: ${errText.slice(0, 500)}` }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
   }
 
-  // Translate Anthropic's SSE event stream into our client's simpler
-  // `{type:'text', text:...}` SSE format.
+  // Translate Anthropic's SSE event stream into our client's simpler protocol:
+  //   { type: 'text', text: '...' }          — incremental text deltas
+  //   { type: 'tool_call', name, input }     — a tool the model wants to use
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
+
+  // Per-content-block scratch state. We accumulate any tool input_json_delta
+  // pieces here and emit a single tool_call event at content_block_stop.
+  type BlockState =
+    | { type: 'text' }
+    | { type: 'tool_use'; name: string; rawInput: string }
+  const blocks = new Map<number, BlockState>()
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -160,16 +227,46 @@ export async function POST(req: NextRequest) {
             if (!data) continue
             try {
               const evt = JSON.parse(data)
-              if (
-                evt.type === 'content_block_delta' &&
-                evt.delta?.type === 'text_delta' &&
-                typeof evt.delta.text === 'string'
-              ) {
-                const chunk = JSON.stringify({ type: 'text', text: evt.delta.text })
-                controller.enqueue(encoder.encode(`data: ${chunk}\n\n`))
+
+              if (evt.type === 'content_block_start') {
+                const idx: number = evt.index
+                const cb = evt.content_block
+                if (cb?.type === 'tool_use') {
+                  blocks.set(idx, { type: 'tool_use', name: cb.name, rawInput: '' })
+                } else {
+                  blocks.set(idx, { type: 'text' })
+                }
+              } else if (evt.type === 'content_block_delta') {
+                const idx: number = evt.index
+                const block = blocks.get(idx)
+                if (!block) continue
+                if (block.type === 'text' && evt.delta?.type === 'text_delta') {
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: 'text', text: evt.delta.text })}\n\n`,
+                    ),
+                  )
+                } else if (block.type === 'tool_use' && evt.delta?.type === 'input_json_delta') {
+                  block.rawInput += evt.delta.partial_json ?? ''
+                }
+              } else if (evt.type === 'content_block_stop') {
+                const idx: number = evt.index
+                const block = blocks.get(idx)
+                if (block?.type === 'tool_use') {
+                  let input: unknown = {}
+                  if (block.rawInput) {
+                    try { input = JSON.parse(block.rawInput) } catch { input = {} }
+                  }
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: 'tool_call', name: block.name, input })}\n\n`,
+                    ),
+                  )
+                }
+                blocks.delete(idx)
               }
             } catch {
-              // ignore malformed event
+              // malformed event — skip
             }
           }
         }

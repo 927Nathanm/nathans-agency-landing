@@ -74,7 +74,10 @@ export function usePoseDetection() {
   const inflightRef = useRef(false)
   // Time series of derived measurements — kept in a ref so per-frame samples
   // don't trigger React re-renders. Drained via getMeasurements().
+  // keypointsHistoryRef is kept lock-step with seriesRef (same indices) so
+  // geometry builders can look up raw landmarks at a given phase index.
   const seriesRef = useRef<FrameMeasurements[]>([])
+  const keypointsHistoryRef = useRef<Keypoint[][]>([])
   const lastSampledTimeRef = useRef<number>(-1)
   const lastVideoRef = useRef<HTMLVideoElement | null>(null)
 
@@ -117,10 +120,12 @@ export function usePoseDetection() {
             if (v && v.currentTime !== lastSampledTimeRef.current) {
               const m = computeMeasurements(kps, v.currentTime)
               seriesRef.current.push(m)
+              keypointsHistoryRef.current.push(kps)
               lastSampledTimeRef.current = v.currentTime
               // Cap memory at ~10s of dense sampling
               if (seriesRef.current.length > 1200) {
                 seriesRef.current.splice(0, seriesRef.current.length - 1200)
+                keypointsHistoryRef.current.splice(0, keypointsHistoryRef.current.length - 1200)
               }
             }
           } else {
@@ -166,8 +171,15 @@ export function usePoseDetection() {
     return seriesRef.current.slice()
   }, [])
 
+  const getKeypointsAt = useCallback((index: number): Keypoint[] | null => {
+    const hist = keypointsHistoryRef.current
+    if (index < 0 || index >= hist.length) return null
+    return hist[index]
+  }, [])
+
   const clearMeasurements = useCallback(() => {
     seriesRef.current = []
+    keypointsHistoryRef.current = []
     lastSampledTimeRef.current = -1
   }, [])
 
@@ -185,5 +197,5 @@ export function usePoseDetection() {
     })
   }, [])
 
-  return { enabled, ready, loading, keypoints, detect, toggle, getMeasurements, clearMeasurements }
+  return { enabled, ready, loading, keypoints, detect, toggle, getMeasurements, getKeypointsAt, clearMeasurements }
 }

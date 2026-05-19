@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { AIState, ChatMessage, Annotation, AIAnnotationSuggestion } from '@/lib/golf/annotationTypes'
 import type { FrameMeasurements } from '@/lib/golf/poseMeasurements'
 
@@ -13,7 +13,31 @@ export interface AnalysisContext {
   fps?: number
   /** Camera angle, if user has selected one */
   cameraAngle?: 'face-on' | 'down-the-line' | 'behind' | 'unknown'
+  /** P-position frame indices for V1 (matches FrameMeasurements series indices) */
+  phases1?: { p1Frame: number | null }
+  /** P-position frame indices for V2 */
+  phases2?: { p1Frame: number | null }
+  /** Whether a club path has been traced on V1 */
+  hasClubPath1?: boolean
+  /** Whether a club path has been traced on V2 */
+  hasClubPath2?: boolean
 }
+
+/**
+ * Tool handlers run client-side when the LLM emits a tool_use block. They
+ * receive the input payload from the model (often empty for fixed-geometry
+ * tools) and return either an Annotation to add as pending, a string error
+ * to surface to the user, or null if there's nothing to do.
+ */
+export type ToolHandlerResult =
+  | { ok: true; annotation: Annotation }
+  | { ok: false; error: string }
+  | null
+
+export type ToolHandlers = Record<
+  string,
+  (input: unknown) => ToolHandlerResult
+>
 
 function parseAnnotations(text: string, currentTime: number): Annotation[] {
   const match = text.match(/```annotations\n([\s\S]*?)\n```/)
@@ -43,13 +67,18 @@ function stripAnnotationBlock(text: string): string {
   return text.replace(/```annotations\n[\s\S]*?\n```/g, '').trim()
 }
 
-export function useAIAnalysis(currentTime: number) {
+export function useAIAnalysis(currentTime: number, toolHandlers?: ToolHandlers) {
   const [state, setState] = useState<AIState>({
     messages: [],
     isLoading: false,
     error: null,
     pendingAnnotations: [],
   })
+
+  // Stash handlers in a ref so the streaming reader always sees the latest
+  // closure-captured state without forcing sendMessage to re-memoize.
+  const handlersRef = useRef<ToolHandlers | undefined>(toolHandlers)
+  handlersRef.current = toolHandlers
 
   const sendMessage = useCallback(
     async (
@@ -92,6 +121,10 @@ export function useAIAnalysis(currentTime: number) {
             cameraAngle: ctx?.cameraAngle ?? 'unknown',
             measurements1: ctx?.measurements1 ?? [],
             measurements2: ctx?.measurements2 ?? [],
+            phases1: ctx?.phases1,
+            phases2: ctx?.phases2,
+            hasClubPath1: ctx?.hasClubPath1 ?? false,
+            hasClubPath2: ctx?.hasClubPath2 ?? false,
           },
         }
 
@@ -128,6 +161,35 @@ export function useAIAnalysis(currentTime: number) {
                       : m
                   ),
                 }))
+              } else if (parsed.type === 'tool_call' && typeof parsed.name === 'string') {
+                const handler = handlersRef.current?.[parsed.name]
+                if (!handler) {
+                  setState(s => ({
+                    ...s,
+                    messages: s.messages.map(m =>
+                      m.id === assistantId
+                        ? { ...m, content: m.content + `\n\n_[Model requested tool \`${parsed.name}\` but no handler is registered.]_` }
+                        : m,
+                    ),
+                  }))
+                  continue
+                }
+                const result = handler(parsed.input)
+                if (result?.ok) {
+                  setState(s => ({
+                    ...s,
+                    pendingAnnotations: [...s.pendingAnnotations, result.annotation],
+                  }))
+                } else if (result && result.ok === false) {
+                  setState(s => ({
+                    ...s,
+                    messages: s.messages.map(m =>
+                      m.id === assistantId
+                        ? { ...m, content: m.content + `\n\n_[Could not draw: ${result.error}]_` }
+                        : m,
+                    ),
+                  }))
+                }
               }
             } catch {
               // partial JSON chunk — skip
