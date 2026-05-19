@@ -39,23 +39,42 @@ function median(arr: number[]): number {
 /**
  * Find P1 (address) — the first sustained period where lead hand is settled
  * and low in the frame. Returns the median index of that window.
+ *
+ * Falls back to "first frame where hand is visible in the lower portion of
+ * the frame" when no strict address window is found — this covers swings
+ * where the user plays straight through without pausing at setup.
  */
 export function detectP1(series: FrameMeasurements[]): number | null {
-  if (series.length < P1_WINDOW) return null
-  for (let start = 0; start <= series.length - P1_WINDOW; start++) {
-    const window = series.slice(start, start + P1_WINDOW)
-    const ys = window
-      .map(m => m.leadHandY)
-      .filter((y): y is number => y !== null)
-    if (ys.length < P1_WINDOW) continue
-    if (variance(ys) > P1_Y_VARIANCE_MAX) continue
-    if (median(ys) < P1_LOWER_THIRD) continue
-    // Match — return the median frame's index relative to the full series.
-    const indices = window
-      .map((m, i) => (m.leadHandY !== null ? start + i : -1))
-      .filter(i => i >= 0)
-    return indices[Math.floor(indices.length / 2)]
+  if (series.length === 0) return null
+
+  // Strict pass: look for a stable address window.
+  if (series.length >= P1_WINDOW) {
+    for (let start = 0; start <= series.length - P1_WINDOW; start++) {
+      const window = series.slice(start, start + P1_WINDOW)
+      const ys = window
+        .map(m => m.leadHandY)
+        .filter((y): y is number => y !== null)
+      if (ys.length < P1_WINDOW) continue
+      if (variance(ys) > P1_Y_VARIANCE_MAX) continue
+      if (median(ys) < P1_LOWER_THIRD) continue
+      const indices = window
+        .map((m, i) => (m.leadHandY !== null ? start + i : -1))
+        .filter(i => i >= 0)
+      return indices[Math.floor(indices.length / 2)]
+    }
   }
+
+  // Loose fallback: earliest frame with a measurable hand in the lower half.
+  for (let i = 0; i < series.length; i++) {
+    const y = series[i].leadHandY
+    if (y !== null && y >= P1_LOWER_THIRD) return i
+  }
+
+  // Last-resort fallback: very first measurable hand frame.
+  for (let i = 0; i < series.length; i++) {
+    if (series[i].leadHandY !== null) return i
+  }
+
   return null
 }
 

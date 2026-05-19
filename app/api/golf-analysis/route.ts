@@ -37,10 +37,11 @@ const TOOLS = [
     description:
       "Draw the user's swing plane on Video 1. Call this when the user asks " +
       'to mark, draw, show, or visualize their swing plane. The system computes ' +
-      "the geometry from the user's address-position pose and their traced " +
-      'club path — you do not provide any coordinates. This tool only works ' +
-      'if pose detection is enabled on Video 1 AND a club path has been traced ' +
-      "on Video 1; otherwise the system will tell the user what's missing.",
+      "the geometry from the user's address-position pose — if they've also " +
+      'traced a club path, that improves accuracy, but it is NOT required: the ' +
+      'system falls back to the user\'s foot position as a ball proxy. Only ' +
+      'precondition is that pose detection has been enabled on Video 1 and ' +
+      'some frames have been recorded. Always try calling this tool when asked.',
     input_schema: {
       type: 'object' as const,
       properties: {},

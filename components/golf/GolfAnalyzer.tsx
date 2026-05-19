@@ -59,27 +59,24 @@ export function GolfAnalyzer() {
     markSwingPlane: (): ToolHandlerResult => {
       const { p1Frame } = phases1.detect()
       if (p1Frame === null) {
-        return { ok: false, error: 'P1 (address) not detected. Enable Pose V1 and play through your swing first.' }
+        return { ok: false, error: 'No pose frames recorded yet. Enable Pose V1 and play through your swing first.' }
       }
       const poseFrame = swing1.getKeypointsAt(p1Frame)
       if (!poseFrame) {
         return { ok: false, error: 'No pose keypoints available at the detected address frame.' }
       }
       const firstClubPoint = clubPath.path1.points[0]
-      if (!firstClubPoint) {
-        return { ok: false, error: 'No club path traced on Video 1 yet. Use the Club Path tool to seed and trace.' }
-      }
       const v = sync.videoRef1.current
       const dims = v && v.videoWidth > 0
         ? { width: v.videoWidth, height: v.videoHeight }
         : { width: 1920, height: 1080 }
       const ann = buildSwingPlaneAnnotation({
         poseFrame,
-        clubPathFirstPoint: { x: firstClubPoint.x, y: firstClubPoint.y },
+        clubPathFirstPoint: firstClubPoint ? { x: firstClubPoint.x, y: firstClubPoint.y } : undefined,
         videoDims: dims,
       })
       if (!ann) {
-        return { ok: false, error: 'Could not compute swing-plane geometry from the available data.' }
+        return { ok: false, error: 'Could not compute swing plane — hands or feet weren\'t detected clearly at address.' }
       }
       return { ok: true, annotation: ann }
     },

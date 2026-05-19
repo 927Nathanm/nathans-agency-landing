@@ -12,6 +12,8 @@ import type { FrameMeasurements } from '@/lib/golf/poseMeasurements'
 // BlazePose landmark indices (mirrors the table in poseMeasurements.ts).
 const LM_LEFT_WRIST = 15
 const LM_RIGHT_WRIST = 16
+const LM_LEFT_ANKLE = 27
+const LM_RIGHT_ANKLE = 28
 
 export type Handedness = 'right' | 'left'
 
@@ -22,8 +24,8 @@ const HAND_PATH_COLOR = '#00E5FF'
 export interface BuildSwingPlaneArgs {
   /** Pose keypoints at the address (P1) frame */
   poseFrame: Keypoint[]
-  /** First tracked club-position point (proxy for the ball at address). Normalized 0..1. */
-  clubPathFirstPoint: Point
+  /** First tracked club-position point (proxy for the ball at address). Normalized 0..1. Optional — if absent we infer "ball" from foot midpoint. */
+  clubPathFirstPoint?: Point
   /** Pixel dimensions of the source video. Not strictly needed for normalized output but kept for future builders. */
   videoDims: { width: number; height: number }
   handedness?: Handedness
@@ -32,9 +34,11 @@ export interface BuildSwingPlaneArgs {
 /**
  * Build the user's swing-plane line.
  *
- * Geometry: a line from the ball position (clubPathFirstPoint) through the
- * midpoint of lead-hand and trail-hand at address, extrapolated up to the
- * top edge of the video frame (y=0 in normalized coordinates).
+ * Geometry: a line from the ball position through the midpoint of lead-hand
+ * and trail-hand at address, extrapolated up to the top edge of the video
+ * frame (y=0 in normalized coordinates). When a traced club path is supplied,
+ * its first point is the ball; otherwise we fall back to the midpoint between
+ * the user's feet (ankles), which sits very close to the ball at address.
  *
  * Returns null if any input is missing or fails confidence checks.
  */
@@ -54,7 +58,20 @@ export function buildSwingPlaneAnnotation(args: BuildSwingPlaneArgs): Annotation
     y: (leadHand.y + trailHand.y) / 2,
   }
 
-  const ball = clubPathFirstPoint
+  // Pick the ball position: traced club start if available, else foot midpoint.
+  let ball: Point | null = clubPathFirstPoint ?? null
+  if (!ball) {
+    const leftAnkle = poseFrame[LM_LEFT_ANKLE]
+    const rightAnkle = poseFrame[LM_RIGHT_ANKLE]
+    if (leftAnkle && rightAnkle && leftAnkle.score >= MIN_HAND_SCORE && rightAnkle.score >= MIN_HAND_SCORE) {
+      ball = {
+        x: (leftAnkle.x + rightAnkle.x) / 2,
+        y: (leftAnkle.y + rightAnkle.y) / 2,
+      }
+    }
+  }
+  if (!ball) return null
+
   const dx = handsMid.x - ball.x
   const dy = handsMid.y - ball.y
 
