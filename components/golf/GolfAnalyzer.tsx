@@ -57,26 +57,52 @@ export function GolfAnalyzer() {
   // from local pose + club-path state and returns an Annotation to render.
   const toolHandlers: ToolHandlers = {
     markSwingPlane: (): ToolHandlerResult => {
-      const { p1Frame } = phases1.detect()
-      if (p1Frame === null) {
+      const series = swing1.getSeries()
+      if (series.length === 0) {
         return { ok: false, error: 'No pose frames recorded yet. Enable Pose V1 and play through your swing first.' }
-      }
-      const poseFrame = swing1.getKeypointsAt(p1Frame)
-      if (!poseFrame) {
-        return { ok: false, error: 'No pose keypoints available at the detected address frame.' }
       }
       const firstClubPoint = clubPath.path1.points[0]
       const v = sync.videoRef1.current
       const dims = v && v.videoWidth > 0
         ? { width: v.videoWidth, height: v.videoHeight }
         : { width: 1920, height: 1080 }
+
+      // Search the early portion of the swing for the frame with the best
+      // combined hands + (feet OR club) confidence. This is more reliable
+      // than relying on a single P1 detection.
+      const scanLimit = Math.min(series.length, 60)
+      let bestIdx = -1
+      let bestScore = -Infinity
+      for (let i = 0; i < scanLimit; i++) {
+        const kps = swing1.getKeypointsAt(i)
+        if (!kps || kps.length === 0) continue
+        const lw = kps[15]?.score ?? 0
+        const rw = kps[16]?.score ?? 0
+        const la = kps[27]?.score ?? 0
+        const ra = kps[28]?.score ?? 0
+        const handsScore = Math.min(lw, rw)
+        const feetScore = Math.min(la, ra)
+        // Hands are required; feet help unless we have a traced club path.
+        const score = handsScore + (firstClubPoint ? 0 : feetScore)
+        if (score > bestScore) {
+          bestScore = score
+          bestIdx = i
+        }
+      }
+      if (bestIdx === -1) {
+        return { ok: false, error: 'Could not find a frame with confident pose detection. Try playing through the swing again.' }
+      }
+      const poseFrame = swing1.getKeypointsAt(bestIdx)
+      if (!poseFrame) {
+        return { ok: false, error: 'No pose keypoints available at the chosen frame.' }
+      }
       const ann = buildSwingPlaneAnnotation({
         poseFrame,
         clubPathFirstPoint: firstClubPoint ? { x: firstClubPoint.x, y: firstClubPoint.y } : undefined,
         videoDims: dims,
       })
       if (!ann) {
-        return { ok: false, error: 'Could not compute swing plane — hands or feet weren\'t detected clearly at address.' }
+        return { ok: false, error: 'Hands or feet weren\'t detected clearly enough to compute the plane. Make sure the full body is visible in the frame.' }
       }
       return { ok: true, annotation: ann }
     },

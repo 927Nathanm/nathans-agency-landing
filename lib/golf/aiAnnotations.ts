@@ -17,7 +17,7 @@ const LM_RIGHT_ANKLE = 28
 
 export type Handedness = 'right' | 'left'
 
-const MIN_HAND_SCORE = 0.4
+const MIN_HAND_SCORE = 0.25
 const SWING_PLANE_COLOR = '#FFD400'
 const HAND_PATH_COLOR = '#00E5FF'
 
