@@ -19,7 +19,7 @@ import type { Annotation, Point } from '@/lib/golf/annotationTypes'
 import { usePoseDetection } from '@/hooks/golf/usePoseDetection'
 import { useSwingMeasurements } from '@/hooks/golf/useSwingMeasurements'
 import { useSwingPhases } from '@/hooks/golf/useSwingPhases'
-import { buildSwingPlaneAnnotation } from '@/lib/golf/aiAnnotations'
+import { buildSwingPlaneAnnotation, buildHandPathAnnotation } from '@/lib/golf/aiAnnotations'
 import type { ToolHandlers, ToolHandlerResult } from '@/hooks/golf/useAIAnalysis'
 import { Layers, Columns2, Camera, HelpCircle, Link2, Link2Off, RefreshCw, PersonStanding, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -80,6 +80,18 @@ export function GolfAnalyzer() {
       })
       if (!ann) {
         return { ok: false, error: 'Could not compute swing-plane geometry from the available data.' }
+      }
+      return { ok: true, annotation: ann }
+    },
+    markHandPath: (input): ToolHandlerResult => {
+      const series = swing1.getSeries()
+      if (series.length < 5) {
+        return { ok: false, error: 'Not enough pose frames recorded yet. Enable Pose V1 and play through your swing.' }
+      }
+      const handArg = (input as { hand?: 'lead' | 'trail' } | undefined)?.hand
+      const ann = buildHandPathAnnotation({ series, hand: handArg })
+      if (!ann) {
+        return { ok: false, error: 'Hand wasn\'t measurable in enough frames to draw a path. Check that the body is visible throughout the swing.' }
       }
       return { ok: true, annotation: ann }
     },

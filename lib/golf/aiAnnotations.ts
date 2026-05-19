@@ -7,6 +7,7 @@
 
 import type { Annotation, Point } from '@/lib/golf/annotationTypes'
 import type { Keypoint } from '@/hooks/golf/usePoseDetection'
+import type { FrameMeasurements } from '@/lib/golf/poseMeasurements'
 
 // BlazePose landmark indices (mirrors the table in poseMeasurements.ts).
 const LM_LEFT_WRIST = 15
@@ -16,6 +17,7 @@ export type Handedness = 'right' | 'left'
 
 const MIN_HAND_SCORE = 0.4
 const SWING_PLANE_COLOR = '#FFD400'
+const HAND_PATH_COLOR = '#00E5FF'
 
 export interface BuildSwingPlaneArgs {
   /** Pose keypoints at the address (P1) frame */
@@ -86,6 +88,48 @@ export function buildSwingPlaneAnnotation(args: BuildSwingPlaneArgs): Annotation
       opacity: 0.9,
     },
     label: 'Swing plane (AI)',
+    source: 'ai',
+  }
+}
+
+export interface BuildHandPathArgs {
+  /** Full measurement time series for the video. */
+  series: FrameMeasurements[]
+  /** Which hand to trace. Defaults to lead hand (most useful for path analysis). */
+  hand?: 'lead' | 'trail'
+}
+
+/**
+ * Build a freehand trace of the hand's path across the entire swing.
+ *
+ * Pulls lead (or trail) hand image-space coords from each frame's
+ * measurements, filters out frames where the hand wasn't measurable, and
+ * returns a polyline. Returns null if too few points to be meaningful.
+ */
+export function buildHandPathAnnotation(args: BuildHandPathArgs): Annotation | null {
+  const { series, hand = 'lead' } = args
+  if (!series || series.length === 0) return null
+
+  const points: Point[] = []
+  for (const m of series) {
+    const x = hand === 'lead' ? m.leadHandX : m.trailHandX
+    const y = hand === 'lead' ? m.leadHandY : m.trailHandY
+    if (x == null || y == null) continue
+    points.push({ x, y })
+  }
+
+  if (points.length < 5) return null
+
+  return {
+    id: crypto.randomUUID(),
+    tool: 'freehand',
+    points,
+    style: {
+      color: HAND_PATH_COLOR,
+      strokeWidth: 2,
+      opacity: 0.85,
+    },
+    label: `${hand === 'lead' ? 'Lead' : 'Trail'} hand path (AI)`,
     source: 'ai',
   }
 }

@@ -47,6 +47,28 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'markHandPath',
+    description:
+      "Draw the trace of the user's hand path across the swing on Video 1. " +
+      'Call this when the user asks to mark, draw, show, trace, or visualize ' +
+      'their hand path, hands, or hand arc. The system pulls hand positions from ' +
+      'the recorded pose measurement series and draws the polyline. Only requires ' +
+      'pose detection enabled on Video 1 with enough recorded frames — no club ' +
+      'path tracing needed. Pass `hand: "lead"` (default) for the lead hand, ' +
+      '`hand: "trail"` for the trail hand.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        hand: {
+          type: 'string' as const,
+          enum: ['lead', 'trail'],
+          description: 'Which hand to trace. Lead is the most useful for path/over-the-top analysis.',
+        },
+      },
+      required: [],
+    },
+  },
 ]
 
 const MEASUREMENT_ADDENDUM = `

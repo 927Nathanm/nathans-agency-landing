@@ -109,6 +109,9 @@ tool and explain in text what you marked and why.
 Currently available annotation tools:
 - markSwingPlane — draws the user's swing plane on Video 1 using their
   address-position pose and the first tracked club-path point as a ball proxy.
+- markHandPath — traces the path of the user's hand(s) across the recorded
+  swing on Video 1. Optional input \`hand\`: "lead" (default) or "trail".
+  Requires only pose detection on V1 — no club path tracing needed.
 
 When you call an annotation tool, also include a short text response (one or
 two sentences) telling the user what you drew and what to look for. If the
